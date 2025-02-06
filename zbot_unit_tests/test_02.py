@@ -1,6 +1,6 @@
 """Runs reinforcement learning unit tests.
 
-To see a video of the policy running on the robot, look in `assets/policy.mp4`.
+To see a video of the policy running in simulation, look in `assets/policy.mp4`.
 """
 
 import asyncio
