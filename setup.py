@@ -29,7 +29,7 @@ setup(
     version=version,
     description="The zbot-unit-tests project",
     author="K-Scale Labs",
-    url="https://github.com/kscalelabs/ksim",
+    url="https://github.com/kscalelabs/zbot-unit-tests",
     long_description=long_description,
     long_description_content_type="text/markdown",
     python_requires=">=3.11",

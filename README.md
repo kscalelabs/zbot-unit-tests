@@ -8,13 +8,21 @@
 git clone git@github.com:kscalelabs/zbot-unit-tests.git
 ```
 
-2. Install dependencies
+2. Make sure you're using Python 3.11 or greater
 
 ```bash
-pip install .
+python --version  # Should show Python 3.11 or greater
 ```
 
-3. Run the tests
+3. Install dependencies
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+4. Run the tests
 
 ```bash
 make test
