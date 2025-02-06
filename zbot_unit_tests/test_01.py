@@ -4,6 +4,7 @@ import asyncio
 import logging
 import math
 import time
+
 import colorlogging
 import pykos
 
@@ -18,7 +19,8 @@ ALL_ACTUATORS = LEFT_ARM_ACTUATORS + RIGHT_ARM_ACTUATORS + LEFT_LEG_ACTUATORS + 
 
 
 async def main() -> None:
-    colorlogging.setup()
+    colorlogging.configure()
+    logger.warning("Starting test-01")
     try:
         async with pykos.KOS("192.168.42.1") as kos:
             await movement_test(kos)

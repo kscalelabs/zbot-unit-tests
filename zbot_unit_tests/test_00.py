@@ -12,7 +12,8 @@ logger = logging.getLogger(__name__)
 
 
 async def main() -> None:
-    colorlogging.setup()
+    colorlogging.configure()
+    logger.warning("Starting test-00")
     try:
         async with pykos.KOS("192.168.42.1") as kos:
             await performance_test(kos, 30)
