@@ -86,18 +86,17 @@ async def move_limb(
 
     for _ in range(repetitions):
         target_delta = math.sin((time.time() - start_time) * frequency * 2 * math.pi) * amplitude
-        for i in range(len(limb)):
-            await kos.actuator.command_actuators(
-                [
-                    {
-                        "actuator_id": i,
-                        "position": start_positions[i] + target_delta,
-                    }
-                    for i in range(limb)
-                ]
-            )
-            count += 1
-            second_count += 1
+        await kos.actuator.command_actuators(
+            [
+                {
+                    "actuator_id": i,
+                    "position": start_positions[i] + target_delta,
+                }
+                for i in range(limb)
+            ]
+        )
+        count += 1
+        second_count += 1
 
         current_second = int(time.time())
         if current_second != last_second:
