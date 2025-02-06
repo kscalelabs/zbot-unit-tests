@@ -74,7 +74,7 @@ async def move_limb(
 
     # Reads start positions.
     states = await kos.actuator.get_actuators_state(limb)
-    start_positions = [state.position for state in states.states]
+    start_positions = {state.actuator_id: state.position for state in states.states}
     start_time = time.time()
 
     # Move limbs and track instructions per second
@@ -87,9 +87,14 @@ async def move_limb(
     for _ in range(repetitions):
         target_delta = math.sin((time.time() - start_time) * frequency * 2 * math.pi) * amplitude
         for i in range(len(limb)):
-            await kos.actuator.configure_actuator(
-                actuator_id=limb[i],
-                position=start_positions[i] + target_delta,
+            await kos.actuator.command_actuators(
+                [
+                    {
+                        "actuator_id": i,
+                        "position": start_positions[i] + target_delta,
+                    }
+                    for i in range(limb)
+                ]
             )
             count += 1
             second_count += 1
