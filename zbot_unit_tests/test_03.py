@@ -21,6 +21,9 @@ RIGHT_LEG_ACTUATORS = [41, 42, 43, 44, 45]
 
 ALL_ACTUATORS = LEFT_ARM_ACTUATORS + RIGHT_ARM_ACTUATORS + LEFT_LEG_ACTUATORS + RIGHT_LEG_ACTUATORS
 
+# Left hand end effector link name.
+HAND_END_EFFECTOR_LINK_NAME = "FINGER_1"
+
 
 async def main() -> None:
     colorlogging.configure()
@@ -74,6 +77,13 @@ async def ik_movement_test(kos: pykos.KOS) -> None:
     # Setup PyBullet
     _, robot_id = await setup_pybullet()
 
+    # Gets the index of the left hand end effector link.
+    link_name_to_index = {p.getBodyInfo(robot_id)[0].decode("UTF-8"): -1}
+    for i in range(p.getNumJoints(robot_id)):
+        name = p.getJointInfo(robot_id, i)[12].decode("UTF-8")
+        link_name_to_index[name] = i
+    hand_link_index = link_name_to_index[HAND_END_EFFECTOR_LINK_NAME]
+
     # Configure all actuators
     await configure_actuators(kos, ALL_ACTUATORS)
 
@@ -98,7 +108,7 @@ async def ik_movement_test(kos: pykos.KOS) -> None:
         # Calculate inverse kinematics
         joint_poses = p.calculateInverseKinematics(
             robot_id,
-            endEffectorLinkIndex=6,  # This should match Z-Bot's end effector link
+            endEffectorLinkIndex=hand_link_index,
             targetPosition=pos,
             targetOrientation=orn,
             maxNumIterations=100,
