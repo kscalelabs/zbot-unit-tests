@@ -75,6 +75,10 @@ async def move_limb(
     # Reads start positions.
     states = await kos.actuator.get_actuators_state(limb)
     start_positions = {state.actuator_id: state.position for state in states.states}
+    missing_ids = set(limb) - set(start_positions.keys())
+    if missing_ids:
+        raise ValueError(f"Actuator IDs {missing_ids} not found in start positions")
+
     start_time = time.time()
 
     # Move limbs and track instructions per second
@@ -92,7 +96,7 @@ async def move_limb(
                     "actuator_id": i,
                     "position": start_positions[i] + target_delta,
                 }
-                for i in range(limb)
+                for i in limb
             ]
         )
         count += 1
