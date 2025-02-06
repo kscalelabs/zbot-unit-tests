@@ -51,5 +51,9 @@ test-01:
 	python -m zbot_unit_tests.test_01
 .PHONY: test-01
 
+test-02:
+	python -m zbot_unit_tests.test_02
+.PHONY: test-02
+
 test: test-00 test-01
 .PHONY: test

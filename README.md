@@ -19,3 +19,15 @@ pip install .
 ```bash
 make test
 ```
+
+### Additional Tests
+
+Check that the URDF and MJCF models are realistic:
+
+```bash
+# To check the URDF model:
+ks robots urdf pybullet zbot-v2 --fixed-base
+
+# To check the MJCF model:
+ks robots urdf mujoco zbot-v2
+```

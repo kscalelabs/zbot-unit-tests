@@ -46,14 +46,14 @@ async def performance_test(kos: pykos.KOS, duration_seconds: int = 10) -> None:
         if current_second != last_second:
             timestamps.append(current_second - start_time)
             counts_per_second.append(second_count)
-            print(f"Time: {current_second - start_time}s - Calls this second: {second_count}")
+            logger.info("Time: %.2f seconds - Calls this second: %d", current_second - start_time, second_count)
             second_count = 0
             last_second = current_second
 
     elapsed_time = time.time() - start_time
-    print(f"Total calls: {count}")
-    print(f"Elapsed time: {elapsed_time:.2f} seconds")
-    print(f"Calls per second: {count / elapsed_time:.2f}")
+    logger.info("Total calls: %d", count)
+    logger.info("Elapsed time: %.2f seconds", elapsed_time)
+    logger.info("Calls per second: %.2f", count / elapsed_time)
 
     # Plot the results
     plt.figure(figsize=(8, 5))

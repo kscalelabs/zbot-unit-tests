@@ -6,6 +6,7 @@ import math
 import time
 
 import colorlogging
+import matplotlib.pyplot as plt
 import pykos
 
 logger = logging.getLogger(__name__)
@@ -31,8 +32,28 @@ async def main() -> None:
 
 async def movement_test(kos: pykos.KOS) -> None:
     """Runs sinusoidal movements on each of the K-Bot's limbs, one at a time."""
-    for limb in LEFT_ARM_ACTUATORS, RIGHT_ARM_ACTUATORS, LEFT_LEG_ACTUATORS, RIGHT_LEG_ACTUATORS:
-        await move_limb(kos, limb)
+    all_data = []
+    limbs = [LEFT_ARM_ACTUATORS, RIGHT_ARM_ACTUATORS, LEFT_LEG_ACTUATORS, RIGHT_LEG_ACTUATORS]
+
+    for limb in limbs:
+        timestamps, counts = await move_limb(kos, limb)
+        all_data.append((limb, timestamps, counts))
+
+    # Create a 2x2 grid of subplots
+    _, axes = plt.subplots(2, 2, figsize=(15, 10))
+    axes = axes.flatten()
+
+    # Plot data for each limb
+    for idx, (limb, timestamps, counts) in enumerate(all_data):
+        ax = axes[idx]
+        ax.plot(timestamps[1:], counts[1:], marker="o", linestyle="-")
+        ax.set_xlabel("Time (seconds)")
+        ax.set_ylabel("Instructions per second")
+        ax.set_title(f"Performance Test: Limb {limb}")
+        ax.grid()
+
+    plt.tight_layout()
+    plt.show()
 
 
 async def move_limb(
@@ -41,8 +62,8 @@ async def move_limb(
     amplitude: float = 15.0,
     frequency: float = 1.0,
     repetitions: int = 5,
-) -> None:
-    """Moves a single limb of the K-Bot."""
+) -> tuple[list[float], list[int]]:
+    """Moves a single limb of the K-Bot and returns performance data."""
     for actuator_id in limb:
         await kos.actuator.configure_actuator(
             actuator_id=actuator_id,
@@ -56,7 +77,13 @@ async def move_limb(
     start_positions = [state.position for state in states.states]
     start_time = time.time()
 
-    # Move limbs as fast as possible.
+    # Move limbs and track instructions per second
+    count = 0
+    timestamps = []
+    counts_per_second = []
+    last_second = int(time.time())
+    second_count = 0
+
     for _ in range(repetitions):
         target_delta = math.sin((time.time() - start_time) * frequency * 2 * math.pi) * amplitude
         for i in range(len(limb)):
@@ -64,6 +91,23 @@ async def move_limb(
                 actuator_id=limb[i],
                 position=start_positions[i] + target_delta,
             )
+            count += 1
+            second_count += 1
+
+        current_second = int(time.time())
+        if current_second != last_second:
+            timestamps.append(current_second - start_time)
+            counts_per_second.append(second_count)
+            logger.info("Time: %.2f seconds - Instructions this second: %d", current_second - start_time, second_count)
+            second_count = 0
+            last_second = current_second
+
+    elapsed_time = time.time() - start_time
+    logger.info("Total instructions: %d", count)
+    logger.info("Elapsed time: %.2f seconds", elapsed_time)
+    logger.info("Instructions per second: %.2f", count / elapsed_time)
+
+    return timestamps, counts_per_second
 
 
 if __name__ == "__main__":
