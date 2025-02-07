@@ -51,6 +51,7 @@ ks robots urdf mujoco zbot-v2
 | ❌     | `test_02` | Inverse kinematics test     |
 | ❌     | `test_03` | Motor system identification |
 | 🚧     | `test_04` | Basic policy test           |
+| ❌     | `test_05` | ZMP-based walking test      |
 
 Key:
 
