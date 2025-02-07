@@ -6,6 +6,7 @@ import math
 import time
 
 from pykos import KOS
+from digital_twin.puppet.mujoco_puppet import MujocoPuppet
 
 
 class BipedController:
@@ -14,12 +15,12 @@ class BipedController:
     and instead will call pykos to directly move actuators.
     """
 
-    def __init__(self, lateral_movement_enabled=True):
-        # Added parameter to control lateral movements
+    def __init__(self, lateral_movement_enabled=False):
+        # Added parameter to control lateral movements, disabled by default
         self.lateral_movement_enabled = lateral_movement_enabled
 
         self.roll_offset = math.radians(0)
-        self.hip_pitch_offset = math.radians(13)
+        self.hip_pitch_offset = math.radians(20)
 
         # -----------
         # Gait params
@@ -35,7 +36,7 @@ class BipedController:
         # Variables for cyclical stepping
         # -----------
         self.stance_foot_index = 0  # 0 or 1
-        self.step_cycle_length = 48  # Increased from 4 to 48 to make each step take longer
+        self.step_cycle_length = 18  # Increased from 4 to 48 to make each step take longer
         self.step_cycle_counter = 0
         self.lateral_foot_shift = 12  # This controls side-to-side movement during walking
         self.max_foot_lift = 10
@@ -43,13 +44,13 @@ class BipedController:
         self.current_foot_lift = 0.0
 
         # Add a base lateral offset to widen the stance
-        self.base_stance_width = 3.0  # Increase this value to widen the stance
+        self.base_stance_width = 2.0  # Increase this value to widen the stance
 
         self.forward_offset = [0.0, 0.0]
         self.accumulated_forward_offset = 0.0
         self.previous_stance_foot_offset = 0.0
         self.previous_swing_foot_offset = 0.0
-        self.step_length = 14.0  # This controls how big each step is
+        self.step_length = 15.0  # This controls how big each step is
 
         self.lateral_offset = 0.0
         self.dyi = 0.0
@@ -261,13 +262,13 @@ class BipedController:
 
         # Arms & others as placeholders:
         angles["left_shoulder_yaw"] = 0.0
-        angles["left_shoulder_pitch"] = 0.0
+        angles["left_shoulder_pitch"] = 3 * self.K1[0]
         angles["left_elbow"] = 0.0
         angles["left_gripper"] = 0.0
 
         angles["right_shoulder_yaw"] = 0.0
-        angles["right_shoulder_pitch"] = 0.0
-        angles["right_elbow"] = 0.0
+        angles["right_shoulder_pitch"] = 3 * self.K1[1]  # Use the right hip roll value
+        angles["right_elbow"] = self.H[1]
         angles["right_gripper"] = 0.0
 
         return angles
@@ -325,24 +326,37 @@ def angles_to_pykos_commands(angles_dict):
 
 async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ip", type=str, default="10.33.11.170", help="IP for the KOS device")
+    parser.add_argument("--ip", type=str, default="10.33.11.170", help="IP for the KOS device, default=192.168.42.1")
+    parser.add_argument(
+        "--mjcf_name", type=str, default="zbot-v2", help="Name of the Mujoco model in the K-Scale API (optional)."
+    )
     parser.add_argument(
         "--no-pykos", action="store_true", help="Disable sending commands to PyKOS (simulation-only mode)."
     )
-    parser.add_argument("--no-lateral", action="store_true", help="Disable lateral movements.")
+    parser.add_argument(
+        "--no-lateral",
+        action="store_true",
+        help="Disable lateral movements (lateral movements are disabled by default).",
+    )
     args = parser.parse_args()
 
     # Create our biped controller with lateral movements disabled if --no-lateral is used
     controller = BipedController(lateral_movement_enabled=not args.no_lateral)
 
+    # If --mjcf_name is provided, set up a MujocoPuppet
+    puppet = None
+    if args.mjcf_name:
+        puppet = MujocoPuppet(args.mjcf_name)
+
     dt = 0.001
+
     if not args.no_pykos:
         # Connect to KOS and enable actuators
         async with KOS(ip=args.ip) as kos:
             for actuator_id in joint_to_actuator_id.values():
                 print(f"Enabling torque for actuator {actuator_id}")
                 await kos.actuator.configure_actuator(
-                    actuator_id=actuator_id, kp=32, kd=32, max_torque=100, torque_enabled=True
+                    actuator_id=actuator_id, kp=32, kd=32, max_torque=80, torque_enabled=True
                 )
 
             # Optionally initialize to 0 position
@@ -375,6 +389,12 @@ async def main():
                     if commands:
                         await kos.actuator.command_actuators(commands)
 
+                    # 4) Also send the same angles to MuJoCo puppet, if available
+                    # Uncomment below if you wish to update the puppet as well:
+                    # if puppet is not None:
+                    #     await puppet.set_joint_angles(angles_dict)
+
+                    # Count how many loops (or 'commands sent') per second
                     commands_sent += 1
                     current_time = time.time()
                     if current_time - start_time >= 1.0:
@@ -404,11 +424,12 @@ async def main():
                 commands = angles_to_pykos_commands(angles_dict)
                 # Instead of sending commands, we simply log them.
                 # print("Simulated PyKOS command:", commands)
-
+                if puppet is not None:
+                    await puppet.set_joint_angles(angles_dict)
                 commands_sent += 1
                 current_time = time.time()
                 if current_time - start_time >= 1.0:
-                    print(f"Simulated Commands per second (CPS): {commands_sent}")
+                    # print(f"Simulated Commands per second (CPS): {commands_sent}")
                     commands_sent = 0
                     start_time = current_time
                 await asyncio.sleep(dt)
