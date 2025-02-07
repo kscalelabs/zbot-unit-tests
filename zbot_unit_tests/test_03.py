@@ -1,4 +1,4 @@
-"""Uses Pybullet inverse kinematics to control the Z-Bot."""
+"""Demonstrates PyBullet inverse kinematics with Z-Bot."""
 
 import asyncio
 import logging
@@ -13,24 +13,17 @@ from kscale.web.clients.client import WWWClient
 
 logger = logging.getLogger(__name__)
 
-# Actuator IDs from test_01.py
+# Just using left arm for demonstration
 LEFT_ARM_ACTUATORS = [11, 12, 13, 14]
-RIGHT_ARM_ACTUATORS = [21, 22, 23, 24]
-LEFT_LEG_ACTUATORS = [31, 32, 33, 34, 35]
-RIGHT_LEG_ACTUATORS = [41, 42, 43, 44, 45]
-
-ALL_ACTUATORS = LEFT_ARM_ACTUATORS + RIGHT_ARM_ACTUATORS + LEFT_LEG_ACTUATORS + RIGHT_LEG_ACTUATORS
-
-# Left hand end effector link name.
 HAND_END_EFFECTOR_LINK_NAME = "FINGER_1"
 
 
 async def main() -> None:
     colorlogging.configure()
-    logger.warning("Starting test-03")
+    logger.warning("Starting PyBullet IK demo")
     try:
-        async with pykos.KOS("192.168.42.1") as kos:
-            await ik_movement_test(kos)
+        async with pykos.KOS("10.33.11.170") as kos:
+            await ik_demo(kos)
     except Exception:
         logger.exception("Make sure that the Z-Bot is connected over USB and the IP address is accessible.")
         raise
@@ -49,11 +42,14 @@ async def setup_pybullet() -> tuple[int, int]:
     except StopIteration:
         raise ValueError(f"No URDF file found in the downloaded directory: {urdf_dir}")
 
-    # Connect to PyBullet
-    physics_client = p.connect(p.DIRECT)  # Use DIRECT mode since we only need IK calculations
+    # Connect to PyBullet with GUI
+    physics_client = p.connect(p.GUI)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
 
-    # Load robot model - using KUKA as placeholder, should be replaced with Z-Bot URDF
+    # Configure camera for better view
+    p.resetDebugVisualizerCamera(cameraDistance=1.5, cameraYaw=0, cameraPitch=-30, cameraTargetPosition=[0, 0, 0])
+
+    # Load robot model
     p.setGravity(0, 0, 0)
     robot_id = p.loadURDF(str(urdf_path), [0, 0, 0])
     p.resetBasePositionAndOrientation(robot_id, [0, 0, 0], [0, 0, 0, 1])
@@ -61,75 +57,120 @@ async def setup_pybullet() -> tuple[int, int]:
     return physics_client, robot_id
 
 
-async def configure_actuators(kos: pykos.KOS, actuator_ids: list[int]) -> None:
-    """Configure the specified actuators."""
-    for actuator_id in actuator_ids:
+async def configure_actuators(kos: pykos.KOS) -> None:
+    """Configure the arm actuators with low gains for smooth motion."""
+    for actuator_id in LEFT_ARM_ACTUATORS:
         await kos.actuator.configure_actuator(
             actuator_id=actuator_id,
-            kp=32.0,
-            kd=32.0,
+            kp=4.0,  # Very low gains for gentle motion
+            kd=4.0,
             torque_enabled=True,
         )
 
 
-async def ik_movement_test(kos: pykos.KOS) -> None:
-    """Run inverse kinematics-based movement test."""
+async def ik_demo(kos: pykos.KOS) -> None:
+    """Demonstrate inverse kinematics with PyBullet and real robot."""
     # Setup PyBullet
     _, robot_id = await setup_pybullet()
 
-    # Gets the index of the left hand end effector link.
+    # Get joint mapping
     link_name_to_index = {p.getBodyInfo(robot_id)[0].decode("UTF-8"): -1}
+    joint_name_to_index = {}
     for i in range(p.getNumJoints(robot_id)):
-        name = p.getJointInfo(robot_id, i)[12].decode("UTF-8")
-        link_name_to_index[name] = i
+        joint_info = p.getJointInfo(robot_id, i)
+        joint_name = joint_info[1].decode("UTF-8")
+        link_name = joint_info[12].decode("UTF-8")
+        joint_name_to_index[joint_name] = i
+        link_name_to_index[link_name] = i
+        logger.info(f"Joint {i}: {joint_name}")
+
     hand_link_index = link_name_to_index[HAND_END_EFFECTOR_LINK_NAME]
 
-    # Configure all actuators
-    await configure_actuators(kos, ALL_ACTUATORS)
+    # Configure actuators
+    await configure_actuators(kos)
 
-    # Get initial states
-    states = await kos.actuator.get_actuators_state(ALL_ACTUATORS)
-    start_positions = {state.actuator_id: state.position for state in states.states}
-    missing_ids = set(ALL_ACTUATORS) - set(start_positions.keys())
-    if missing_ids:
-        raise ValueError(f"Actuator IDs {missing_ids} not found in start positions")
+    # Store joint mapping for left arm
+    joint_indices = []
+    logger.info("Joint mapping for left arm:")
+    for i, actuator_id in enumerate(LEFT_ARM_ACTUATORS):
+        joint_name = f"joint_{actuator_id}"
+        if joint_name in joint_name_to_index:
+            joint_idx = joint_name_to_index[joint_name]
+            joint_indices.append(joint_idx)
+            logger.info(f"Actuator {actuator_id} -> Joint {joint_idx} ({joint_name})")
+        else:
+            logger.warning(f"Could not find joint for actuator {actuator_id}")
+            joint_indices.append(i)
 
-    # Movement parameters
-    duration = 10.0  # seconds
     start_time = time.time()
+    try:
+        while True:  # Run until Ctrl+C
+            t = time.time() - start_time
 
-    while time.time() - start_time < duration:
-        t = time.time() - start_time
+            # Simple up-down motion
+            height = 0.005 * math.sin(t / 4)  # Very small, slow motion
+            pos = [-0.2, 0, height]  # Just moving up and down
+            orn = p.getQuaternionFromEuler([0, -math.pi, 0])
 
-        # Generate target end effector position (circular motion)
-        pos = [-0.4, 0.2 * math.cos(t), 0.2 * math.sin(t)]
-        orn = p.getQuaternionFromEuler([0, -math.pi, 0])
+            # Calculate IK
+            joint_poses = p.calculateInverseKinematics(
+                robot_id,
+                endEffectorLinkIndex=hand_link_index,
+                targetPosition=pos,
+                targetOrientation=orn,
+                maxNumIterations=200,
+                residualThreshold=0.01,
+            )
 
-        # Calculate inverse kinematics
-        joint_poses = p.calculateInverseKinematics(
-            robot_id,
-            endEffectorLinkIndex=hand_link_index,
-            targetPosition=pos,
-            targetOrientation=orn,
-            maxNumIterations=100,
-            residualThreshold=0.01,
-        )
+            # Get current robot state
+            states = await kos.actuator.get_actuators_state(LEFT_ARM_ACTUATORS)
+            current_positions = {state.actuator_id: state.position for state in states.states}
 
-        # Map IK solution to Z-Bot actuators and send commands
-        # Note: This mapping needs to be adjusted based on Z-Bot's kinematics
-        commands = []
-        for i, actuator_id in enumerate(LEFT_ARM_ACTUATORS):  # Starting with left arm as example
-            if i < len(joint_poses):
-                commands.append(
-                    {"actuator_id": actuator_id, "position": math.degrees(joint_poses[i])}  # Convert radians to degrees
-                )
+            # Send commands and update simulation
+            commands = []
+            for i, actuator_id in enumerate(LEFT_ARM_ACTUATORS):
+                if i < len(joint_poses):
+                    joint_idx = joint_indices[i]
+                    angle_radians = joint_poses[joint_idx]
+                    angle_degrees = math.degrees(angle_radians)
 
-        if commands:
-            await kos.actuator.command_actuators(commands)
+                    # Limit range for safety
+                    angle_degrees = max(-20, min(20, angle_degrees))  # Even smaller range
+                    angle_radians = math.radians(angle_degrees)
 
-        await asyncio.sleep(0.01)  # Control rate
+                    commands.append({"actuator_id": actuator_id, "position": angle_degrees})
 
-    logger.info("IK movement test completed")
+                    # Update PyBullet (in radians)
+                    p.setJointMotorControl2(
+                        robot_id,
+                        joint_idx,
+                        p.POSITION_CONTROL,
+                        targetPosition=angle_radians,
+                        maxVelocity=0.3,  # Very slow movement
+                    )
+
+                    # Log positions
+                    current_pos = current_positions.get(actuator_id, 0)
+                    logger.info(
+                        f"Actuator {actuator_id}: Target: {angle_degrees:.2f}° Current: {current_pos:.2f}° "
+                        f"(PyBullet: {angle_radians:.3f} rad)"
+                    )
+
+            if commands:
+                await kos.actuator.command_actuators(commands)
+
+            # Step simulation
+            for _ in range(5):
+                p.stepSimulation()
+            await asyncio.sleep(0.1)  # Slower rate for gentler motion
+
+    except KeyboardInterrupt:
+        logger.info("Demo stopped by user")
+    except Exception as e:
+        logger.exception("Error during demo")
+        raise
+
+    logger.info("IK demo completed")
 
 
 if __name__ == "__main__":

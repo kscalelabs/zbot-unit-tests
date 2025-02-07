@@ -23,7 +23,7 @@ async def main() -> None:
     colorlogging.configure()
     logger.warning("Starting test-01")
     try:
-        async with pykos.KOS("192.168.42.1") as kos:
+        async with pykos.KOS("10.33.11.170") as kos:
             await movement_test(kos)
     except Exception:
         logger.exception("Make sure that the Z-Bot is connected over USB and the IP address is accessible.")
