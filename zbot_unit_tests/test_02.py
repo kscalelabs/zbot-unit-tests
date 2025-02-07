@@ -1,6 +1,8 @@
 """Runs reinforcement learning unit tests.
 
 To see a video of the policy running in simulation, look in `assets/model_checkpoints/zbot_rl_policy/policy.mp4`.
+
+To see the input actuator positions and output policy actions for each timestep, uncomment the `logger.setLevel(logging.DEBUG)` line.
 """
 
 import asyncio
@@ -15,7 +17,7 @@ import onnxruntime as ort  # type: ignore[import-untyped]
 import pykos
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+# logger.setLevel(logging.DEBUG)
 
 
 # Constants for actuator IDs and policy indices
