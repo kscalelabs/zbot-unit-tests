@@ -2,7 +2,8 @@
 
 To see a video of the policy running in simulation, look in `assets/model_checkpoints/zbot_rl_policy/policy.mp4`.
 
-To see the input actuator positions and output policy actions for each timestep, uncomment the `logger.setLevel(logging.DEBUG)` line.
+To see the input actuator positions and output policy actions for each timestep,
+uncomment the `logger.setLevel(logging.DEBUG)` line.
 """
 
 import asyncio
@@ -91,9 +92,15 @@ def create_policy_input(positions: dict[int, float], prev_actions: np.ndarray) -
 
     joint_velocities = np.zeros(18, dtype=np.float32)
 
-    obs = np.concatenate([COMMAND_VELOCITY, PROJECTED_GRAVITY, joint_angles, joint_velocities, prev_actions]).astype(
-        np.float32
-    )
+    obs = np.concatenate(
+        [
+            COMMAND_VELOCITY,
+            PROJECTED_GRAVITY,
+            joint_angles,
+            joint_velocities,
+            prev_actions,
+        ],
+    ).astype(np.float32)
 
     return obs
 
