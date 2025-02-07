@@ -1,4 +1,10 @@
-"""Runs basic performance profiling using the KOS SDK."""
+"""Runs basic performance profiling using the KOS SDK.
+
+Currently, we are able to achieve 360 calls per second, but when WebRTC is active, this drops to closer to 120
+calls per second. See the technical notes [here](https://notion.kscale.dev/zbot-tech-notes) for more details.
+
+WebRTC portal: http://192.168.42.1:8083/pages/player/webrtc/s1/0
+"""
 
 import asyncio
 import logging

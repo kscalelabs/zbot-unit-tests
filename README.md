@@ -39,3 +39,19 @@ ks robots urdf pybullet zbot-v2 --fixed-base
 # To check the MJCF model:
 ks robots urdf mujoco zbot-v2
 ```
+
+### Roadmap
+
+| Status | Name      | Description                 |
+| ------ | --------- | --------------------------- |
+| 🚧     | `test_00` | Inference speed test        |
+| ✅     | `test_01` | Basic movement test         |
+| 🚧     | `test_02` | Basic policy test           |
+| ❌     | `test_03` | Inverse kinematics test     |
+| ❌     | `test_04` | Motor system identification |
+
+Key:
+
+- ✅: Completed, other teams able to replicate and pass
+- 🚧: Test is implemented, but issues persist
+- ❌: Not implemented

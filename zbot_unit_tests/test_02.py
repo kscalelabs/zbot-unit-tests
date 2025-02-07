@@ -14,11 +14,10 @@ import time
 
 import colorlogging
 import numpy as np
-import onnxruntime as ort  # type: ignore[import-untyped]
+import onnxruntime as ort
 import pykos
 
 logger = logging.getLogger(__name__)
-# logger.setLevel(logging.DEBUG)
 
 
 # Constants for actuator IDs and policy indices
