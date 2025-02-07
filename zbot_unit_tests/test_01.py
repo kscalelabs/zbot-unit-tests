@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 import pykos
 
 logger = logging.getLogger(__name__)
+# logger.setLevel(logging.DEBUG)
+
 
 LEFT_ARM_ACTUATORS = [11, 12, 13, 14]
 RIGHT_ARM_ACTUATORS = [21, 22, 23, 24]
@@ -60,8 +62,8 @@ async def move_limb(
     kos: pykos.KOS,
     limb: list[int],
     amplitude: float = 15.0,
-    frequency: float = 1.0,
-    repetitions: int = 5,
+    frequency: float = 0.1,
+    repetitions: int = 500,
 ) -> tuple[list[float], list[int]]:
     """Moves a single limb of the K-Bot and returns performance data."""
     for actuator_id in limb:
@@ -89,16 +91,25 @@ async def move_limb(
     second_count = 0
 
     for _ in range(repetitions):
-        target_delta = math.sin((time.time() - start_time) * frequency * 2 * math.pi) * amplitude
-        await kos.actuator.command_actuators(
-            [
-                {
-                    "actuator_id": i,
-                    "position": start_positions[i] + target_delta,
-                }
-                for i in limb
-            ]
-        )
+        current_time = time.time()
+        elapsed_seconds = current_time - start_time
+        target_delta = math.sin(elapsed_seconds * frequency * 2 * math.pi) * amplitude
+
+        # Create commands for each actuator
+        commands = [
+            {
+                "actuator_id": i,
+                "position": start_positions[i] + target_delta,
+            }
+            for i in limb
+        ]
+
+        # Log the movement commands
+        logger.debug("t=%.4fs : delta=%.2f deg, Actuator commands:", elapsed_seconds, target_delta)
+        for cmd in commands:
+            logger.debug("     ID %d : %.2f deg", cmd["actuator_id"], cmd["position"])
+
+        await kos.actuator.command_actuators(commands)
         count += 1
         second_count += 1
 
