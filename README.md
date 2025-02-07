@@ -44,17 +44,11 @@ ks robots urdf mujoco zbot-v2
 
 ## Roadmap
 
-| Status | Name      | Description                 |
-| ------ | --------- | --------------------------- |
-| 🚧     | `test_00` | Inference speed test        |
-| ✅     | `test_01` | Basic movement test         |
-| ❌     | `test_02` | Inverse kinematics test     |
-| ❌     | `test_03` | Motor system identification |
-| 🚧     | `test_04` | Basic policy test           |
-| ❌     | `test_05` | ZMP-based walking test      |
-
-Key:
-
-- ✅: Completed, other teams able to replicate and pass
-- 🚧: Test is implemented, but issues persist
-- ❌: Not implemented
+| Status | Replicated | Name      | Description                 |
+| ------ | ---------- | --------- | --------------------------- |
+| 🚧     | ✅         | `test_00` | Inference speed test        |
+| ✅     | ✅         | `test_01` | Basic movement test         |
+| ❌     | ❌         | `test_02` | Inverse kinematics test     |
+| ❌     | ❌         | `test_03` | Motor system identification |
+| 🚧     | ❌         | `test_04` | Basic policy test           |
+| ❌     | ❌         | `test_05` | ZMP-based walking           |
