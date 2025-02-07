@@ -1,200 +1,136 @@
-"""Runs reinforcement learning unit tests.
-
-To see a video of the policy running in simulation, look in `assets/model_checkpoints/zbot_rl_policy/policy.mp4`.
-
-To see the input actuator positions and output policy actions for each timestep,
-uncomment the `logger.setLevel(logging.DEBUG)` line.
-"""
+"""Uses Pybullet inverse kinematics to control the Z-Bot."""
 
 import asyncio
 import logging
 import math
-import os
 import time
 
 import colorlogging
-import numpy as np
-import onnxruntime as ort
+import pybullet as p
+import pybullet_data
 import pykos
+from kscale.web.clients.client import WWWClient
 
 logger = logging.getLogger(__name__)
 
+# Actuator IDs from test_01.py
+LEFT_ARM_ACTUATORS = [11, 12, 13, 14]
+RIGHT_ARM_ACTUATORS = [21, 22, 23, 24]
+LEFT_LEG_ACTUATORS = [31, 32, 33, 34, 35]
+RIGHT_LEG_ACTUATORS = [41, 42, 43, 44, 45]
 
-# Constants for actuator IDs and policy indices
-ACTUATOR_IDS = [11, 12, 13, 14, 21, 22, 23, 24, 31, 32, 33, 34, 35, 41, 42, 43, 44, 45]
+ALL_ACTUATORS = LEFT_ARM_ACTUATORS + RIGHT_ARM_ACTUATORS + LEFT_LEG_ACTUATORS + RIGHT_LEG_ACTUATORS
 
-ACTUATOR_ID_TO_NAME = {
-    11: "left_shoulder_yaw",
-    12: "left_shoulder_pitch",
-    13: "left_elbow",
-    14: "left_gripper",
-    21: "right_shoulder_yaw",
-    22: "right_shoulder_pitch",
-    23: "right_elbow",
-    24: "right_gripper",
-    31: "left_hip_yaw",
-    32: "left_hip_roll",
-    33: "left_hip_pitch",
-    34: "left_knee",
-    35: "left_ankle",
-    41: "right_hip_yaw",
-    42: "right_hip_roll",
-    43: "right_hip_pitch",
-    44: "right_knee",
-    45: "right_ankle",
-}
-
-# Policy input constants
-COMMAND_VELOCITY = np.array([-0.5, 0.0, 0.0], dtype=np.float32)
-PROJECTED_GRAVITY = np.array([0.0, 0.0, -1.0], dtype=np.float32)
-
-# Map actuator IDs to policy indices (just enumerate them in order)
-ACTUATOR_ID_TO_POLICY_IDX = {
-    11: 0,  # left_shoulder_yaw
-    12: 1,  # left_shoulder_pitch
-    13: 2,  # left_elbow
-    14: 3,  # left_gripper
-    21: 4,  # right_shoulder_yaw
-    22: 5,  # right_shoulder_pitch
-    23: 6,  # right_elbow
-    24: 7,  # right_gripper
-    31: 8,  # left_hip_yaw
-    32: 9,  # left_hip_roll
-    33: 10,  # left_hip_pitch
-    34: 11,  # left_knee
-    35: 12,  # left_ankle
-    41: 13,  # right_hip_yaw
-    42: 14,  # right_hip_roll
-    43: 15,  # right_hip_pitch
-    44: 16,  # right_knee
-    45: 17,  # right_ankle
-}
-
-
-def load_policy(checkpoint_dir: str) -> ort.InferenceSession:
-    """Load ONNX policy from checkpoint directory."""
-    policy_files = [f for f in os.listdir(checkpoint_dir) if f.endswith(".onnx")]
-    if not policy_files:
-        raise FileNotFoundError(f"Could not find .onnx file in {checkpoint_dir}")
-    policy_file = policy_files[0]
-    policy_path = os.path.join(checkpoint_dir, policy_file)
-    logger.info("Loading policy from: %s", os.path.abspath(policy_path))
-    return ort.InferenceSession(policy_path)
-
-
-def create_policy_input(positions: dict[int, float], prev_actions: np.ndarray) -> np.ndarray:
-    """Create observation vector for policy from current state."""
-    joint_angles = np.zeros(18, dtype=np.float32)
-
-    for actuator_id, policy_idx in ACTUATOR_ID_TO_POLICY_IDX.items():
-        joint_angles[policy_idx] = positions.get(actuator_id, 0.0)
-
-    joint_velocities = np.zeros(18, dtype=np.float32)
-
-    obs = np.concatenate(
-        [
-            COMMAND_VELOCITY,
-            PROJECTED_GRAVITY,
-            joint_angles,
-            joint_velocities,
-            prev_actions,
-        ],
-    ).astype(np.float32)
-
-    return obs
-
-
-def print_state_and_actions(count: int, positions: dict[int, float], actions: np.ndarray) -> None:
-    """Print current joint positions and policy actions."""
-    logger.debug("=== Current State and Actions ===")
-
-    # Find the longest name for alignment
-    max_name_length = max(len(name) for name in ACTUATOR_ID_TO_NAME.values())
-
-    for actuator_id in ACTUATOR_IDS:
-        pos_deg = math.degrees(positions.get(actuator_id, 0.0))
-        policy_idx = ACTUATOR_ID_TO_POLICY_IDX[actuator_id]
-        action = actions[policy_idx]
-        logger.debug(
-            "timestep %4d: %s: pos=%6.2f deg, action=%6.3f rad",
-            count,
-            f"{ACTUATOR_ID_TO_NAME[actuator_id]:<{max_name_length}}",
-            pos_deg,
-            action,
-        )
+# Left hand end effector link name.
+HAND_END_EFFECTOR_LINK_NAME = "FINGER_1"
 
 
 async def main() -> None:
     colorlogging.configure()
-    logger.warning("Starting test-02")
+    logger.warning("Starting test-03")
     try:
         async with pykos.KOS("192.168.42.1") as kos:
-            await reinforcement_learning_test(kos)
+            await ik_movement_test(kos)
     except Exception:
         logger.exception("Make sure that the Z-Bot is connected over USB and the IP address is accessible.")
         raise
+    finally:
+        p.disconnect()
 
 
-async def reinforcement_learning_test(kos: pykos.KOS) -> None:
-    """Runs reinforcement learning unit tests."""
-    # Load policy
-    policy_dir = "assets/model_checkpoints/zbot_rl_policy"
-    session = load_policy(policy_dir)
-    input_name = session.get_inputs()[0].name
+async def setup_pybullet() -> tuple[int, int]:
+    """Initialize PyBullet physics simulation."""
+    # Downloads the URDF model.
+    async with WWWClient() as client:
+        urdf_dir = await client.download_and_extract_urdf("zbot-v2")
 
-    # Initialize previous actions
-    prev_actions = np.zeros(18, dtype=np.float32)
+    try:
+        urdf_path = next(urdf_dir.glob("*.urdf"))
+    except StopIteration:
+        raise ValueError(f"No URDF file found in the downloaded directory: {urdf_dir}")
 
-    # Performance tracking variables
-    count = 0
+    # Connect to PyBullet
+    physics_client = p.connect(p.GUI)
+    p.setAdditionalSearchPath(pybullet_data.getDataPath())
+
+    # Load robot model.
+    p.resetDebugVisualizerCamera(cameraDistance=1.5, cameraYaw=0, cameraPitch=-30, cameraTargetPosition=[0, 0, 0])
+    p.setGravity(0, 0, 0)
+    robot_id = p.loadURDF(str(urdf_path), [0, 0, 0])
+    p.resetBasePositionAndOrientation(robot_id, [0, 0, 0], [0, 0, 0, 1])
+
+    return physics_client, robot_id
+
+
+async def configure_actuators(kos: pykos.KOS, actuator_ids: list[int]) -> None:
+    """Configure the specified actuators."""
+    for actuator_id in actuator_ids:
+        await kos.actuator.configure_actuator(
+            actuator_id=actuator_id,
+            kp=32.0,
+            kd=32.0,
+            torque_enabled=True,
+        )
+
+
+async def ik_movement_test(kos: pykos.KOS) -> None:
+    """Run inverse kinematics-based movement test."""
+    # Setup PyBullet
+    _, robot_id = await setup_pybullet()
+
+    # Gets the index of the left hand end effector link.
+    link_name_to_index = {p.getBodyInfo(robot_id)[0].decode("UTF-8"): -1}
+    for i in range(p.getNumJoints(robot_id)):
+        name = p.getJointInfo(robot_id, i)[12].decode("UTF-8")
+        link_name_to_index[name] = i
+    hand_link_index = link_name_to_index[HAND_END_EFFECTOR_LINK_NAME]
+
+    # Configure all actuators
+    await configure_actuators(kos, ALL_ACTUATORS)
+
+    # Get initial states
+    states = await kos.actuator.get_actuators_state(ALL_ACTUATORS)
+    start_positions = {state.actuator_id: state.position for state in states.states}
+    missing_ids = set(ALL_ACTUATORS) - set(start_positions.keys())
+    if missing_ids:
+        raise ValueError(f"Actuator IDs {missing_ids} not found in start positions")
+
+    # Movement parameters
+    duration = 10.0  # seconds
     start_time = time.time()
-    end_time = start_time + 10  # Run for 10 seconds like test_00
 
-    last_second = int(time.time())
-    second_count = 0
+    while time.time() - start_time < duration:
+        t = time.time() - start_time
 
-    while time.time() < end_time:
-        # Get robot state and run inference
-        response = await kos.actuator.get_actuators_state(ACTUATOR_IDS)
-        positions = {state.actuator_id: math.radians(state.position) for state in response.states}
+        # Generate target end effector position (circular motion)
+        pos = [-0.4, 0.2 * math.cos(t), 0.2 * math.sin(t)]
+        orn = p.getQuaternionFromEuler([0, -math.pi, 0])
 
-        # Create policy input and run inference
-        obs = create_policy_input(positions, prev_actions)
-        actions = session.run(None, {input_name: obs.reshape(1, -1)})[0][0]
+        # Calculate inverse kinematics
+        joint_poses = p.calculateInverseKinematics(
+            robot_id,
+            endEffectorLinkIndex=hand_link_index,
+            targetPosition=pos,
+            targetOrientation=orn,
+            maxNumIterations=100,
+            residualThreshold=0.01,
+        )
 
-        # Store actions for next iteration
-        prev_actions = actions.copy()
+        # Map IK solution to Z-Bot actuators and send commands
+        # Note: This mapping needs to be adjusted based on Z-Bot's kinematics
+        commands = []
+        for i, actuator_id in enumerate(LEFT_ARM_ACTUATORS):  # Starting with left arm as example
+            if i < len(joint_poses):
+                commands.append(
+                    {"actuator_id": actuator_id, "position": math.degrees(joint_poses[i])}  # Convert radians to degrees
+                )
 
-        # Scale actions by 0.5
-        actions *= 0.5
+        if commands:
+            await kos.actuator.command_actuators(commands)
 
-        # Print detailed state and actions (in debug level)
-        print_state_and_actions(count, positions, actions)
+        await asyncio.sleep(0.01)  # Control rate
 
-        # Update performance counters
-        count += 1
-        second_count += 1
-
-        # Log performance each second
-        current_second = int(time.time())
-        if current_second != last_second:
-            logger.info(
-                "Time: %.2f seconds - Inference calls this second: %d",
-                current_second - start_time,
-                second_count,
-            )
-            second_count = 0
-            last_second = current_second
-
-        # Small sleep to prevent overwhelming the system
-        await asyncio.sleep(0.001)
-
-    # Print final statistics
-    elapsed_time = time.time() - start_time
-    logger.info("Total inference calls: %d", count)
-    logger.info("Elapsed time: %.2f seconds", elapsed_time)
-    logger.info("Average inference calls per second: %.2f", count / elapsed_time)
-    logger.info("\nPolicy test completed successfully")
+    logger.info("IK movement test completed")
 
 
 if __name__ == "__main__":

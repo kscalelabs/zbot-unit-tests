@@ -40,15 +40,15 @@ ks robots urdf pybullet zbot-v2 --fixed-base
 ks robots urdf mujoco zbot-v2
 ```
 
-### Roadmap
+## Roadmap
 
 | Status | Name      | Description                 |
 | ------ | --------- | --------------------------- |
 | 🚧     | `test_00` | Inference speed test        |
 | ✅     | `test_01` | Basic movement test         |
-| 🚧     | `test_02` | Basic policy test           |
-| ❌     | `test_03` | Inverse kinematics test     |
-| ❌     | `test_04` | Motor system identification |
+| ❌     | `test_02` | Inverse kinematics test     |
+| ❌     | `test_03` | Motor system identification |
+| 🚧     | `test_04` | Basic policy test           |
 
 Key:
 
