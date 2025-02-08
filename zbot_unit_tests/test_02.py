@@ -198,7 +198,7 @@ def log_joint_info(robot_id: int, joint_name_to_index: dict[str, int], link_name
         logger.debug("  Joint Limits: (%f, %f) (radians)", joint_info[8], joint_info[9])
     logger.debug("Preliminary Actuator ID to Joint Index Mapping:")
     for actuator_id in ALL_ACTUATORS:
-        test_joint_name = "joint_%d" % actuator_id
+        test_joint_name = f"joint_{actuator_id}"
         actual_joint_name = ACTUATOR_ID_TO_NAME.get(actuator_id, "unknown")
         pybullet_index = joint_name_to_index.get(test_joint_name, "not found")
         logger.debug(
