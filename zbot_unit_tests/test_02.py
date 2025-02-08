@@ -566,7 +566,7 @@ async def main() -> None:
     colorlogging.configure()
     logger.warning("Starting PyBullet IK demo")
     try:
-        async with pykos.KOS("10.33.11.170") as kos:
+        async with pykos.KOS("192.168.42.1") as kos:
             await configure_actuators(kos)
             controller = ZBotIKController(kos, SELECTED_LIMB)
             await controller.setup_simulation()
