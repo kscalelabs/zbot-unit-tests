@@ -26,8 +26,6 @@ else:
         pass
 
 
-# from pykos.actuator import ActuatorCommand  # type: ignore[import-not-found]
-
 # ---------------------------
 # Global Constants & Settings
 # ---------------------------
