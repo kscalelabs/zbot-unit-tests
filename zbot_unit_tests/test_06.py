@@ -12,16 +12,27 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, List, Tuple
+from typing import List, Optional, Protocol, Tuple
 
 import colorlogging
 import matplotlib.pyplot as plt
 import numpy as np
 import pykos
-
-# from pykos.proto import ImuValues
+from mpl_toolkits.mplot3d import Axes3D  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
+
+
+class ImuValues(Protocol):
+    accel_x: float
+    accel_y: float
+    accel_z: float
+    gyro_x: float
+    gyro_y: float
+    gyro_z: float
+    mag_x: Optional[float]
+    mag_y: Optional[float]
+    mag_z: Optional[float]
 
 
 @dataclass
@@ -33,7 +44,7 @@ class ImuTestResults:
     duration: float
     timestamps: List[float]
     samples_per_second: List[int]
-    imu_readings: List[Any]
+    imu_readings: List[ImuValues]
 
 
 async def run_imu_test(kos: pykos.KOS, duration_seconds: int = 5) -> ImuTestResults:
@@ -50,9 +61,9 @@ async def run_imu_test(kos: pykos.KOS, duration_seconds: int = 5) -> ImuTestResu
     start_time = time.time()
     end_time = start_time + duration_seconds
 
-    timestamps = []
-    samples_per_second = []
-    imu_readings = []
+    timestamps: List[float] = []
+    samples_per_second: List[int] = []
+    imu_readings: List[ImuValues] = []
 
     last_second = int(start_time)
     second_count = 0
@@ -157,9 +168,9 @@ def plot_results(results: ImuTestResults) -> None:
     plt.show()
 
 
-# Add new helper functions (compute Euler angles and rotation matrix)
-def compute_euler_angles(imu_value: Any) -> Tuple[float, float, float]:
+def compute_euler_angles(imu_value: ImuValues) -> Tuple[float, float, float]:
     """Compute Euler angles (roll, pitch, yaw) from IMU sensor values.
+
     Roll and pitch are derived from the accelerometer and yaw is computed
     using a tilt compensation of the magnetometer.
     """
@@ -180,15 +191,25 @@ def compute_euler_angles(imu_value: Any) -> Tuple[float, float, float]:
 
 def euler_to_rotation_matrix(roll: float, pitch: float, yaw: float) -> np.ndarray:
     """Convert Euler angles to a rotation matrix.
+
     This rotation matrix is obtained using the sequence: R = Rz * Ry * Rx.
     """
-    R_x = np.array([[1, 0, 0], [0, np.cos(roll), -np.sin(roll)], [0, np.sin(roll), np.cos(roll)]])
-    R_y = np.array([[np.cos(pitch), 0, np.sin(pitch)], [0, 1, 0], [-np.sin(pitch), 0, np.cos(pitch)]])
-    R_z = np.array([[np.cos(yaw), -np.sin(yaw), 0], [np.sin(yaw), np.cos(yaw), 0], [0, 0, 1]])
-    return R_z.dot(R_y).dot(R_x)
+    r_x = np.array([[1, 0, 0], [0, np.cos(roll), -np.sin(roll)], [0, np.sin(roll), np.cos(roll)]])
+    r_y = np.array([[np.cos(pitch), 0, np.sin(pitch)], [0, 1, 0], [-np.sin(pitch), 0, np.cos(pitch)]])
+    r_z = np.array([[np.cos(yaw), -np.sin(yaw), 0], [np.sin(yaw), np.cos(yaw), 0], [0, 0, 1]])
+    return r_z.dot(r_y).dot(r_x)
 
 
-def reset_3d_axis(ax, xlim, ylim, zlim, xlabel, ylabel, zlabel, title):
+def reset_3d_axis(
+    ax: Axes3D,
+    xlim: Tuple[float, float],
+    ylim: Tuple[float, float],
+    zlim: Tuple[float, float],
+    xlabel: str,
+    ylabel: str,
+    zlabel: str,
+    title: str,
+) -> None:
     """Reset a 3D axis with the given limits, labels, and title."""
     ax.cla()
     ax.set_xlim(xlim)
@@ -200,19 +221,28 @@ def reset_3d_axis(ax, xlim, ylim, zlim, xlabel, ylabel, zlabel, title):
     ax.set_title(title)
 
 
-# Add a new function for real-time 3D orientation plotting
+def update_orientation(orientation: np.ndarray, gyro_x: float, gyro_y: float, gyro_z: float, dt: float) -> None:
+    """Update the current Euler orientation (in radians) by integrating the gyro angular velocities.
+
+    The gyro values are given in degrees per second and are converted to radians per second.
+    """
+    orientation[0] += np.deg2rad(gyro_x) * dt
+    orientation[1] += np.deg2rad(gyro_y) * dt
+    orientation[2] += np.deg2rad(gyro_z) * dt
+
+
 async def realtime_orientation_plot(kos: pykos.KOS, duration_seconds: int = 10) -> None:
     """Display a real-time 3D plot of the IMU orientation.
+
     The plot uses quiver arrows to denote the rotated coordinate frame.
     """
     plt.ion()  # enable interactive mode
     fig, (ax_orient, ax_accel) = plt.subplots(1, 2, figsize=(12, 6), subplot_kw={"projection": "3d"})
 
     # Set axis properties for orientation subplot
-    reset_3d_axis(ax_orient, [-1.5, 1.5], [-1.5, 1.5], [-1.5, 1.5], "X", "Y", "Z", "Real-time IMU Orientation")
-
+    reset_3d_axis(ax_orient, (-1.5, 1.5), (-1.5, 1.5), (-1.5, 1.5), "X", "Y", "Z", "Real-time IMU Orientation")
     # Set axis properties for acceleration subplot
-    reset_3d_axis(ax_accel, [-10, 10], [-10, 10], [-10, 10], "X", "Y", "Z", "Real-time Acceleration Vector")
+    reset_3d_axis(ax_accel, (-10, 10), (-10, 10), (-10, 10), "X", "Y", "Z", "Real-time Acceleration Vector")
 
     start_time = time.time()
     last_update_time = start_time
@@ -220,6 +250,7 @@ async def realtime_orientation_plot(kos: pykos.KOS, duration_seconds: int = 10) 
     orientation_euler = np.array([0.0, 0.0, 0.0])
     last_second = int(start_time)
     second_count = 0
+
     while time.time() < start_time + duration_seconds:
         imu_value = await kos.imu.get_imu_values()
         second_count += 1
@@ -227,30 +258,30 @@ async def realtime_orientation_plot(kos: pykos.KOS, duration_seconds: int = 10) 
         current_time = time.time()
         dt = current_time - last_update_time
         last_update_time = current_time
-        # Convert gyro values from degrees per second to radians per second and integrate to update Euler angles
-        orientation_euler[0] += np.deg2rad(imu_value.gyro_x) * dt
-        orientation_euler[1] += np.deg2rad(imu_value.gyro_y) * dt
-        orientation_euler[2] += np.deg2rad(imu_value.gyro_z) * dt
+        # Update the orientation by integrating gyro angular velocities (deg/s)
+        update_orientation(orientation_euler, imu_value.gyro_x, imu_value.gyro_y, imu_value.gyro_z, dt)
 
         current_second = int(time.time())
         if current_second != last_second:
             logger.info(
-                "Realtime Plot - Time: %.2f seconds - Calls this second: %d", current_second - start_time, second_count
+                "Realtime Plot - Time: %.2f seconds - Calls this second: %d",
+                current_second - start_time,
+                second_count,
             )
             second_count = 0
             last_second = current_second
 
         # Compute rotation matrix from the integrated Euler angles
-        R = euler_to_rotation_matrix(orientation_euler[0], orientation_euler[1], orientation_euler[2])
+        r = euler_to_rotation_matrix(orientation_euler[0], orientation_euler[1], orientation_euler[2])
 
         # Compute rotated coordinate axes (unit vectors) for orientation
-        x_axis = R.dot(np.array([1, 0, 0]))
-        y_axis = R.dot(np.array([0, 1, 0]))
-        z_axis = R.dot(np.array([0, 0, 1]))
+        x_axis = r.dot(np.array([1, 0, 0]))
+        y_axis = r.dot(np.array([0, 1, 0]))
+        z_axis = r.dot(np.array([0, 0, 1]))
 
         # Clear and reset the axes in each iteration to remove old arrows
-        reset_3d_axis(ax_orient, [-1.5, 1.5], [-1.5, 1.5], [-1.5, 1.5], "X", "Y", "Z", "Real-time IMU Orientation")
-        reset_3d_axis(ax_accel, [-10, 10], [-10, 10], [-10, 10], "X", "Y", "Z", "Real-time Acceleration Vector")
+        reset_3d_axis(ax_orient, (-1.5, 1.5), (-1.5, 1.5), (-1.5, 1.5), "X", "Y", "Z", "Real-time IMU Orientation")
+        reset_3d_axis(ax_accel, (-10, 10), (-10, 10), (-10, 10), "X", "Y", "Z", "Real-time Acceleration Vector")
 
         # Plot the coordinate frame on the orientation subplot
         ax_orient.quiver(0, 0, 0, x_axis[0], x_axis[1], x_axis[2], color="r", label="X")
@@ -263,6 +294,7 @@ async def realtime_orientation_plot(kos: pykos.KOS, duration_seconds: int = 10) 
 
         plt.draw()
         plt.pause(0.01)
+
     plt.ioff()
     plt.show()
 
