@@ -7,24 +7,27 @@ This test measures IMU performance and data quality. It performs the following:
 
 """
 
-import asyncio
 import argparse
+import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from typing import List, Tuple, Any
+from typing import Any, List, Tuple
 
 import colorlogging
 import matplotlib.pyplot as plt
 import numpy as np
 import pykos
+
 # from pykos.proto import ImuValues
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class ImuTestResults:
     """Results from running the IMU test."""
+
     avg_calls_per_second: float
     total_calls: int
     duration: float
@@ -32,20 +35,21 @@ class ImuTestResults:
     samples_per_second: List[int]
     imu_readings: List[Any]
 
+
 async def run_imu_test(kos: pykos.KOS, duration_seconds: int = 5) -> ImuTestResults:
     """Run IMU performance and data collection test.
-    
+
     Args:
         kos: KOS client instance
         duration_seconds: How long to run the test for
-    
+
     Returns:
         ImuTestResults containing test statistics and data
     """
     count = 0
     start_time = time.time()
     end_time = start_time + duration_seconds
-    
+
     timestamps = []
     samples_per_second = []
     imu_readings = []
@@ -65,14 +69,13 @@ async def run_imu_test(kos: pykos.KOS, duration_seconds: int = 5) -> ImuTestResu
         if current_second != last_second:
             timestamps.append(current_second - start_time)
             samples_per_second.append(second_count)
-            logger.info("Time: %.2f seconds - Samples this second: %d", 
-                       current_second - start_time, second_count)
+            logger.info("Time: %.2f seconds - Samples this second: %d", current_second - start_time, second_count)
             second_count = 0
             last_second = current_second
 
     elapsed_time = time.time() - start_time
     avg_rate = count / elapsed_time
-    
+
     logger.info("Test Complete:")
     logger.info("Total samples: %d", count)
     logger.info("Elapsed time: %.2f seconds", elapsed_time)
@@ -84,24 +87,26 @@ async def run_imu_test(kos: pykos.KOS, duration_seconds: int = 5) -> ImuTestResu
         duration=elapsed_time,
         timestamps=timestamps,
         samples_per_second=samples_per_second,
-        imu_readings=imu_readings
+        imu_readings=imu_readings,
     )
+
 
 def plot_results(results: ImuTestResults) -> None:
     """Generate plots visualizing the IMU test results.
-    
+
     Args:
         results: The IMU test results to visualize
     """
     # Create figure with 2x2 subplots
     fig, axs = plt.subplots(2, 2, figsize=(12, 10))
     ax_rate, ax_accel, ax_gyro, ax_mag = axs.flatten()
-    
+
     times = np.linspace(0, results.duration, len(results.imu_readings))
 
     # Plot 1: Sampling rate over time
-    ax_rate.plot(results.timestamps[1:], results.samples_per_second[1:], 
-                 marker="o", linestyle="-", label="Samples/second")
+    ax_rate.plot(
+        results.timestamps[1:], results.samples_per_second[1:], marker="o", linestyle="-", label="Samples/second"
+    )
     ax_rate.set_xlabel("Time (seconds)")
     ax_rate.set_ylabel("Samples per Second")
     ax_rate.set_title("IMU Sampling Rate Over Time")
@@ -151,43 +156,40 @@ def plot_results(results: ImuTestResults) -> None:
     plt.tight_layout()
     plt.show()
 
+
 # Add new helper functions (compute Euler angles and rotation matrix)
 def compute_euler_angles(imu_value: Any) -> Tuple[float, float, float]:
-    """
-    Compute Euler angles (roll, pitch, yaw) from IMU sensor values.
+    """Compute Euler angles (roll, pitch, yaw) from IMU sensor values.
     Roll and pitch are derived from the accelerometer and yaw is computed
     using a tilt compensation of the magnetometer.
     """
     # Compute roll and pitch from accelerometer
     roll = np.arctan2(imu_value.accel_y, imu_value.accel_z)
     pitch = np.arctan2(-imu_value.accel_x, np.sqrt(imu_value.accel_y**2 + imu_value.accel_z**2))
-    
+
     # Tilt compensation for magnetometer (simple approach)
     mag_x = imu_value.mag_x * np.cos(pitch) + imu_value.mag_z * np.sin(pitch)
-    mag_y = imu_value.mag_x * np.sin(roll) * np.sin(pitch) + imu_value.mag_y * np.cos(roll) - imu_value.mag_z * np.sin(roll) * np.cos(pitch)
+    mag_y = (
+        imu_value.mag_x * np.sin(roll) * np.sin(pitch)
+        + imu_value.mag_y * np.cos(roll)
+        - imu_value.mag_z * np.sin(roll) * np.cos(pitch)
+    )
     yaw = np.arctan2(-mag_y, mag_x)
     return roll, pitch, yaw
 
+
 def euler_to_rotation_matrix(roll: float, pitch: float, yaw: float) -> np.ndarray:
-    """
-    Convert Euler angles to a rotation matrix.
+    """Convert Euler angles to a rotation matrix.
     This rotation matrix is obtained using the sequence: R = Rz * Ry * Rx.
     """
-    R_x = np.array([[1, 0, 0],
-                    [0, np.cos(roll), -np.sin(roll)],
-                    [0, np.sin(roll),  np.cos(roll)]])
-    R_y = np.array([[ np.cos(pitch), 0, np.sin(pitch)],
-                    [0,              1,             0],
-                    [-np.sin(pitch), 0, np.cos(pitch)]])
-    R_z = np.array([[np.cos(yaw), -np.sin(yaw), 0],
-                    [np.sin(yaw),  np.cos(yaw), 0],
-                    [0,                   0,    1]])
+    R_x = np.array([[1, 0, 0], [0, np.cos(roll), -np.sin(roll)], [0, np.sin(roll), np.cos(roll)]])
+    R_y = np.array([[np.cos(pitch), 0, np.sin(pitch)], [0, 1, 0], [-np.sin(pitch), 0, np.cos(pitch)]])
+    R_z = np.array([[np.cos(yaw), -np.sin(yaw), 0], [np.sin(yaw), np.cos(yaw), 0], [0, 0, 1]])
     return R_z.dot(R_y).dot(R_x)
 
+
 def reset_3d_axis(ax, xlim, ylim, zlim, xlabel, ylabel, zlabel, title):
-    """
-    Reset a 3D axis with the given limits, labels, and title.
-    """
+    """Reset a 3D axis with the given limits, labels, and title."""
     ax.cla()
     ax.set_xlim(xlim)
     ax.set_ylim(ylim)
@@ -197,18 +199,18 @@ def reset_3d_axis(ax, xlim, ylim, zlim, xlabel, ylabel, zlabel, title):
     ax.set_zlabel(zlabel)
     ax.set_title(title)
 
+
 # Add a new function for real-time 3D orientation plotting
 async def realtime_orientation_plot(kos: pykos.KOS, duration_seconds: int = 10) -> None:
-    """
-    Display a real-time 3D plot of the IMU orientation.
+    """Display a real-time 3D plot of the IMU orientation.
     The plot uses quiver arrows to denote the rotated coordinate frame.
     """
     plt.ion()  # enable interactive mode
-    fig, (ax_orient, ax_accel) = plt.subplots(1, 2, figsize=(12, 6), subplot_kw={'projection': '3d'})
-    
+    fig, (ax_orient, ax_accel) = plt.subplots(1, 2, figsize=(12, 6), subplot_kw={"projection": "3d"})
+
     # Set axis properties for orientation subplot
     reset_3d_axis(ax_orient, [-1.5, 1.5], [-1.5, 1.5], [-1.5, 1.5], "X", "Y", "Z", "Real-time IMU Orientation")
-    
+
     # Set axis properties for acceleration subplot
     reset_3d_axis(ax_accel, [-10, 10], [-10, 10], [-10, 10], "X", "Y", "Z", "Real-time Acceleration Vector")
 
@@ -232,8 +234,9 @@ async def realtime_orientation_plot(kos: pykos.KOS, duration_seconds: int = 10) 
 
         current_second = int(time.time())
         if current_second != last_second:
-            logger.info("Realtime Plot - Time: %.2f seconds - Calls this second: %d", 
-                        current_second - start_time, second_count)
+            logger.info(
+                "Realtime Plot - Time: %.2f seconds - Calls this second: %d", current_second - start_time, second_count
+            )
             second_count = 0
             last_second = current_second
 
@@ -263,26 +266,26 @@ async def realtime_orientation_plot(kos: pykos.KOS, duration_seconds: int = 10) 
     plt.ioff()
     plt.show()
 
+
 async def main() -> None:
     """Main entry point for the IMU test.
-    
+
     By default, the performance test and its plots are executed.
     If the --realtime_plot flag is provided, the real-time 3D orientation
     plot will be displayed afterward.
     """
-
     parser = argparse.ArgumentParser(description="IMU Test Runner")
-    parser.add_argument("--realtime_plot", action="store_true",
-                        help="Run 3D realtime orientation plot after the performance test.")
+    parser.add_argument(
+        "--realtime_plot", action="store_true", help="Run 3D realtime orientation plot after the performance test."
+    )
     args = parser.parse_args()
     realtime_plot = args.realtime_plot
-    
+
     colorlogging.configure()
     logger.warning("Starting IMU Test (test-06)")
-    
+
     try:
         async with pykos.KOS("192.168.42.1") as kos:
-                
             if not realtime_plot:
                 # Run the performance test (previous functionality)
                 results = await run_imu_test(kos, duration_seconds=5)
@@ -293,6 +296,7 @@ async def main() -> None:
     except Exception:
         logger.exception("Test failed. Ensure Z-Bot is connected via USB and the IP is accessible.")
         raise
+
 
 if __name__ == "__main__":
     asyncio.run(main())
