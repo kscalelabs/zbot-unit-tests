@@ -5,6 +5,8 @@ This test measures IMU performance and data quality. It performs the following:
 2. Logs and visualizes IMU data stability
 3. Reports key statistics about IMU performance
 
+Use the --realtime_plot flag to display a real-time 3D plot of the IMU orientation.
+
 """
 
 import argparse
