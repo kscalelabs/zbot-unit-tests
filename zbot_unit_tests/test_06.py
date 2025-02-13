@@ -6,7 +6,6 @@ This test measures IMU performance and data quality. It performs the following:
 3. Reports key statistics about IMU performance
 
 Use the --realtime_plot flag to display a real-time 3D plot of the IMU orientation.
-
 """
 
 import argparse
@@ -170,32 +169,8 @@ def plot_results(results: ImuTestResults) -> None:
     plt.show()
 
 
-def compute_euler_angles(imu_value: ImuValues) -> Tuple[float, float, float]:
-    """Compute Euler angles (roll, pitch, yaw) from IMU sensor values.
-
-    Roll and pitch are derived from the accelerometer and yaw is computed
-    using a tilt compensation of the magnetometer.
-    """
-    # Compute roll and pitch from accelerometer
-    roll = np.arctan2(imu_value.accel_y, imu_value.accel_z)
-    pitch = np.arctan2(-imu_value.accel_x, np.sqrt(imu_value.accel_y**2 + imu_value.accel_z**2))
-
-    # Tilt compensation for magnetometer (simple approach)
-    mag_x = imu_value.mag_x * np.cos(pitch) + imu_value.mag_z * np.sin(pitch)
-    mag_y = (
-        imu_value.mag_x * np.sin(roll) * np.sin(pitch)
-        + imu_value.mag_y * np.cos(roll)
-        - imu_value.mag_z * np.sin(roll) * np.cos(pitch)
-    )
-    yaw = np.arctan2(-mag_y, mag_x)
-    return roll, pitch, yaw
-
-
 def euler_to_rotation_matrix(roll: float, pitch: float, yaw: float) -> np.ndarray:
-    """Convert Euler angles to a rotation matrix.
-
-    This rotation matrix is obtained using the sequence: R = Rz * Ry * Rx.
-    """
+    """Convert Euler angles to a rotation matrix using the sequence: R = Rz * Ry * Rx."""
     r_x = np.array([[1, 0, 0], [0, np.cos(roll), -np.sin(roll)], [0, np.sin(roll), np.cos(roll)]])
     r_y = np.array([[np.cos(pitch), 0, np.sin(pitch)], [0, 1, 0], [-np.sin(pitch), 0, np.cos(pitch)]])
     r_z = np.array([[np.cos(yaw), -np.sin(yaw), 0], [np.sin(yaw), np.cos(yaw), 0], [0, 0, 1]])
@@ -223,23 +198,13 @@ def reset_3d_axis(
     ax.set_title(title)
 
 
-def update_orientation(orientation: np.ndarray, gyro_x: float, gyro_y: float, gyro_z: float, dt: float) -> None:
-    """Update the current Euler orientation (in radians) by integrating the gyro angular velocities.
-
-    The gyro values are given in degrees per second and are converted to radians per second.
-    """
-    orientation[0] += np.deg2rad(gyro_x) * dt
-    orientation[1] += np.deg2rad(gyro_y) * dt
-    orientation[2] += np.deg2rad(gyro_z) * dt
-
-
 async def realtime_orientation_plot(kos: pykos.KOS, duration_seconds: int = 10) -> None:
     """Display a real-time 3D plot of the IMU orientation.
 
-    The plot uses quiver arrows to denote the rotated coordinate frame.
+    This plot uses the fused Euler angles (and quaternion) provided by the IMU API.
     """
     plt.ion()  # enable interactive mode
-    fig, (ax_orient, ax_accel) = plt.subplots(1, 2, figsize=(12, 6), subplot_kw={"projection": "3d"})
+    fig, (ax_orient, ax_accel) = plt.subplots(1, 2, figsize=(12, 8), subplot_kw={"projection": "3d"})
 
     # Set axis properties for orientation subplot
     reset_3d_axis(ax_orient, (-1.5, 1.5), (-1.5, 1.5), (-1.5, 1.5), "X", "Y", "Z", "Real-time IMU Orientation")
@@ -247,52 +212,70 @@ async def realtime_orientation_plot(kos: pykos.KOS, duration_seconds: int = 10) 
     reset_3d_axis(ax_accel, (-10, 10), (-10, 10), (-10, 10), "X", "Y", "Z", "Real-time Acceleration Vector")
 
     start_time = time.time()
-    last_update_time = start_time
     # Initialize the orientation as zero (upright, identity rotation)
-    orientation_euler = np.array([0.0, 0.0, 0.0])
     last_second = int(start_time)
     second_count = 0
 
     while time.time() < start_time + duration_seconds:
-        imu_value = await kos.imu.get_imu_values()
+        # Get all IMU values at once using gather
+        imu_euler, imu_quat, imu_values = await asyncio.gather(
+            kos.imu.get_euler_angles(), kos.imu.get_quaternion(), kos.imu.get_imu_values()
+        )
+
         second_count += 1
 
         current_time = time.time()
-        dt = current_time - last_update_time
-        last_update_time = current_time
-        # Update the orientation by integrating gyro angular velocities (deg/s)
-        update_orientation(orientation_euler, imu_value.gyro_x, imu_value.gyro_y, imu_value.gyro_z, dt)
 
-        current_second = int(time.time())
+        current_second = int(current_time)
         if current_second != last_second:
             logger.info(
-                "Realtime Plot - Time: %.2f seconds - Calls this second: %d",
-                current_second - start_time,
-                second_count,
+                "Realtime Plot - Time: %.2f seconds - Calls this second: %d", current_time - start_time, second_count
             )
             second_count = 0
             last_second = current_second
 
-        # Compute rotation matrix from the integrated Euler angles
-        r = euler_to_rotation_matrix(orientation_euler[0], orientation_euler[1], orientation_euler[2])
+        # Get Euler angles from Quaternion instead
+        # # Extract quaternion components
+        # w = imu_quat.w
+        # x = imu_quat.x
+        # y = imu_quat.y
+        # z = imu_quat.z
 
-        # Compute rotated coordinate axes (unit vectors) for orientation
+        # # Calculate roll, pitch, yaw from quaternion
+        # roll = np.arctan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))
+        # pitch = np.arcsin(2 * (w * y - z * x))
+        # yaw = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+
+        # Use the fused Euler angles directly.
+        roll = imu_euler.roll
+        pitch = imu_euler.pitch
+        yaw = imu_euler.yaw
+
+        # Compute rotation matrix from the Euler angles.
+        r = euler_to_rotation_matrix(roll, pitch, yaw)
+
+        # Compute rotated coordinate axes (unit vectors) for orientation.
         x_axis = r.dot(np.array([1, 0, 0]))
         y_axis = r.dot(np.array([0, 1, 0]))
         z_axis = r.dot(np.array([0, 0, 1]))
 
-        # Clear and reset the axes in each iteration to remove old arrows
+        # Clear and reset the axes in each iteration.
         reset_3d_axis(ax_orient, (-1.5, 1.5), (-1.5, 1.5), (-1.5, 1.5), "X", "Y", "Z", "Real-time IMU Orientation")
         reset_3d_axis(ax_accel, (-10, 10), (-10, 10), (-10, 10), "X", "Y", "Z", "Real-time Acceleration Vector")
 
-        # Plot the coordinate frame on the orientation subplot
+        # Plot the coordinate frame on the orientation subplot.
         ax_orient.quiver(0, 0, 0, x_axis[0], x_axis[1], x_axis[2], color="r", label="X")
         ax_orient.quiver(0, 0, 0, y_axis[0], y_axis[1], y_axis[2], color="g", label="Y")
         ax_orient.quiver(0, 0, 0, z_axis[0], z_axis[1], z_axis[2], color="b", label="Z")
 
-        # Plot the acceleration vector on the acceleration subplot
-        accel_vec = np.array([imu_value.accel_x, imu_value.accel_y, imu_value.accel_z])
+        # Plot the acceleration vector on the acceleration subplot.
+        accel_vec = np.array([imu_values.accel_x, imu_values.accel_y, imu_values.accel_z])
         ax_accel.quiver(0, 0, 0, accel_vec[0], accel_vec[1], accel_vec[2], color="m", label="Accel")
+        # Add a text annotation with the acceleration values.
+        accel_text = f"Linear Acceleration Values:\nx: {accel_vec[0]:.2f}, y: {accel_vec[1]:.2f}, z: {accel_vec[2]:.2f}"
+        ax_accel.text2D(
+            0.05, -0.25, accel_text, transform=ax_accel.transAxes, color="black", fontsize=24, clip_on=False
+        )
 
         plt.draw()
         plt.pause(0.01)
@@ -304,9 +287,8 @@ async def realtime_orientation_plot(kos: pykos.KOS, duration_seconds: int = 10) 
 async def main() -> None:
     """Main entry point for the IMU test.
 
-    By default, the performance test and its plots are executed.
-    If the --realtime_plot flag is provided, the real-time 3D orientation
-    plot will be displayed afterward.
+    If the --realtime_plot flag is provided, the real-time 3D orientation plot will be displayed.
+    Otherwise, the performance test and plots are executed.
     """
     parser = argparse.ArgumentParser(description="IMU Test Runner")
     parser.add_argument(
@@ -319,13 +301,17 @@ async def main() -> None:
     logger.warning("Starting IMU Test (test-06)")
 
     try:
-        async with pykos.KOS("192.168.42.1") as kos:
+        # Use the appropriate IP for your system.
+        async with pykos.KOS("10.33.11.170") as kos:
+            # async with pykos.KOS("10.33.11.231") as kos:
+            # async with pykos.KOS("10.33.10.68") as kos:
             if not realtime_plot:
-                # Run the performance test (previous functionality)
                 results = await run_imu_test(kos, duration_seconds=5)
+                # Use the same plotting logic for performance test as before.
+                # (Plotting acceleration, gyro, magnetometer, and sampling rate.)
+                # (The performance test code remains unchanged.)
                 plot_results(results)
             else:
-                # If the realtime_plot flag is set, display the 3D orientation plot
                 await realtime_orientation_plot(kos, duration_seconds=10000)
     except Exception:
         logger.exception("Test failed. Ensure Z-Bot is connected via USB and the IP is accessible.")
