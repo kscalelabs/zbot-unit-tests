@@ -48,12 +48,12 @@ async def run_robot(kos: KOS, is_real: bool) -> None:
 async def main():
 
     print("Starting simulator server...")
-    sim_process = subprocess.Popen(["kos-sim", "zbot-v2"])
+    sim_process = subprocess.Popen(["kos-sim", "zbot-v2-fixed", "--no-gravity"])
     time.sleep(2)
 
     try:
         print("Running on both simulator and real robot simultaneously...")
-        async with KOS(ip="localhost", port=50051) as sim_kos, KOS(ip="10.33.11.231", port=50051) as real_kos:
+        async with KOS(ip="localhost", port=50051) as sim_kos, KOS(ip="10.33.11.170", port=50051) as real_kos:
 
             await sim_kos.sim.reset()
 
@@ -69,25 +69,23 @@ async def main():
 
             for joint_name, actuator_id in ACTUATOR_MAPPING.items():
                 print(f"Testing {joint_name} (ID: {actuator_id})")
+                test_angle = -45
 
-                if actuator_id in [31, 32, 41, 42]:
-                    test_angle = 10
-                elif actuator_id in [11, 22, 33, 34, 13]:
-                    test_angle = -45
-                elif actuator_id in [34]:
-                    test_angle = 100
-                else:
-                    test_angle = 45
-
-                command = [{"actuator_id": actuator_id, "position": test_angle}]
+                command = [
+                    {"actuator_id": actuator_id, "position": -test_angle if actuator_id in [21, 23, 24] else test_angle}
+                ]
+                sim_command = [
+                    {"actuator_id": actuator_id, "position": -test_angle if actuator_id in [21, 23, 24] else test_angle}
+                ]
                 await asyncio.gather(
-                    sim_kos.actuator.command_actuators(command), real_kos.actuator.command_actuators(command)
+                    sim_kos.actuator.command_actuators(sim_command), real_kos.actuator.command_actuators(command)
                 )
                 await asyncio.sleep(2)
 
                 command = [{"actuator_id": actuator_id, "position": 0}]
+                sim_command = [{"actuator_id": actuator_id, "position": 0}]
                 await asyncio.gather(
-                    sim_kos.actuator.command_actuators(command), real_kos.actuator.command_actuators(command)
+                    sim_kos.actuator.command_actuators(sim_command), real_kos.actuator.command_actuators(command)
                 )
                 await asyncio.sleep(1)
 
