@@ -301,17 +301,13 @@ async def main() -> None:
     logger.warning("Starting IMU Test (test-06)")
 
     try:
-        # Use the appropriate IP for your system.
-        async with pykos.KOS("10.33.11.170") as kos:
-            # async with pykos.KOS("10.33.11.231") as kos:
-            # async with pykos.KOS("10.33.10.68") as kos:
+        async with pykos.KOS("192.168.42.1") as kos:
             if not realtime_plot:
+                # Run the performance test (previous functionality)
                 results = await run_imu_test(kos, duration_seconds=5)
-                # Use the same plotting logic for performance test as before.
-                # (Plotting acceleration, gyro, magnetometer, and sampling rate.)
-                # (The performance test code remains unchanged.)
                 plot_results(results)
             else:
+                # If the realtime_plot flag is set, display the 3D orientation plot
                 await realtime_orientation_plot(kos, duration_seconds=10000)
     except Exception:
         logger.exception("Test failed. Ensure Z-Bot is connected via USB and the IP is accessible.")
