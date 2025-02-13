@@ -59,7 +59,7 @@ ks robots urdf mujoco zbot-v2
 | 🚧     | ✅         | `test_00` | Inference speed test        |
 | ✅     | ✅         | `test_01` | Basic movement test         |
 | 🚧     | ❌         | `test_02` | Inverse kinematics test     |
-| ❌     | ❌         | `test_03` | Motor system identification |
+| ✅     | ❌         | `test_03` | Motor system identification |
 | 🚧     | ❌         | `test_04` | Basic policy test           |
 | ✅     | ❌         | `test_05` | ZMP-based walking           |
 | 🚧     | ❌         | `test_06` | IMU test                    |
