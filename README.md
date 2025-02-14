@@ -63,3 +63,4 @@ ks robots urdf mujoco zbot-v2
 | 🚧     | ❌         | `test_04` | Basic policy test           |
 | ✅     | ❌         | `test_05` | ZMP-based walking           |
 | 🚧     | ❌         | `test_06` | IMU test                    |
+| ✅     | ✅         | `test_07` | Microphone Conversation test|
