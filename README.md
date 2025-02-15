@@ -64,3 +64,4 @@ ks robots urdf mujoco zbot-v2
 | ✅     | ❌         | `test_05` | ZMP-based walking           |
 | 🚧     | ❌         | `test_06` | IMU test                    |
 | ✅     | ✅         | `test_07` | Microphone Conversation test|
+| 🚧     | ❌         | `test_08` | Voice2Action test           |
