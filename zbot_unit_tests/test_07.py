@@ -1,21 +1,26 @@
-# Instructions:
+"""
+Preparing the Environment:
+```bash
+scp -O test_07.py root@<KOS_IP_ADDRESS>:/root/alpine/root/
+ssh root@<KOS_IP_ADDRESS>
+chroot /root/alpine
+cd /root
+source venv/bin/activate
+```
 
-# Preparing the Environment:
-# scp -O test_07.py root@<KOS_IP_ADDRESS>:/root/alpine/root/
-# ssh root@<KOS_IP_ADDRESS>
-# chroot /root/alpine
-# cd /root
-# source venv/bin/activate
+Running the Test:
+```bash
+python test_07.py
+```
 
-# Running the Test:
-# python test_07.py
-
-# Retrieving the Recorded Audio:
-# scp -O root@<KOS_IP_ADDRESS>:/root/alpine/root/recorded_audio.wav .
-
+Retrieving the Recorded Audio:
+```bash
+scp -O root@<KOS_IP_ADDRESS>:/root/alpine/root/recorded_audio.wav .
+```
+"""
+import argparse
 import sounddevice as sd
 import soundfile as sf
-import argparse
 
 # Default parameters
 DEFAULT_DURATION = 5  # Default recording duration in seconds
@@ -33,8 +38,13 @@ def main(duration):
     try:
         # Step 1: Record audio
         print(f"Recording for {duration} seconds...")
-        audio_data = sd.rec(int(duration * samplerate), samplerate=samplerate, 
-                            channels=len(channels), device=record_device_id, dtype='float32', mapping=channels)
+        audio_data = sd.rec(
+            int(duration * samplerate), 
+            samplerate=samplerate, 
+            channels=len(channels), 
+            device=record_device_id, 
+            dtype='float32', 
+            mapping=channels)
         sd.wait()  # Wait until recording is finished
         print("Recording finished.")
 
