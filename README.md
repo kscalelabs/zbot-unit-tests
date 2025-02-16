@@ -1,6 +1,4 @@
-# zbot-unit-tests
-
-[Roadmap](https://github.com/orgs/kscalelabs/projects/20/views/1)
+# K-Bot Unit Tests
 
 ## Getting Started
 
@@ -17,7 +15,7 @@ git lfs pull
 2. Clone the repository
 
 ```bash
-git clone git@github.com:kscalelabs/zbot-unit-tests.git
+git clone git@github.com:kscalelabs/kbot-unit-tests.git
 ```
 
 3. Make sure you're using Python 3.11 or greater
@@ -46,22 +44,15 @@ Check that the URDF and MJCF models are realistic:
 
 ```bash
 # To check the URDF model:
-ks robots urdf pybullet zbot-v2 --fixed-base
+ks robots urdf pybullet kbot-v1 --fixed-base
 
 # To check the MJCF model:
-ks robots urdf mujoco zbot-v2
+ks robots urdf mujoco kbot-v1
 ```
 
 ## Roadmap
 
-| Status | Replicated | Name      | Description                 |
-| ------ | ---------- | --------- | --------------------------- |
-| 🚧     | ✅         | `test_00` | Inference speed test        |
-| ✅     | ✅         | `test_01` | Basic movement test         |
-| 🚧     | ❌         | `test_02` | Inverse kinematics test     |
-| ✅     | ❌         | `test_03` | Motor system identification |
-| 🚧     | ❌         | `test_04` | Basic policy test           |
-| ✅     | ❌         | `test_05` | ZMP-based walking           |
-| 🚧     | ❌         | `test_06` | IMU test                    |
-| ✅     | ✅         | `test_07` | Microphone Conversation test|
-| 🚧     | ❌         | `test_08` | Voice2Action test           |
+| Status | Replicated | Name      | Description                                |
+| ------ | ---------- | --------- | ------------------------------------------ |
+| 🚧     | ❌         | `test_00` | kos-sim matching real robot test          |
+| 🚧     | ❌         | `test_01` | play recorded actions test                |
