@@ -66,7 +66,7 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 [tool.ruff.lint.isort]
 
-known-first-party = ["zbot_unit_tests", "tests"]
+known-first-party = ["kbot_unit_tests", "tests"]
 combine-as-imports = true
 
 [tool.ruff.lint.pydocstyle]
