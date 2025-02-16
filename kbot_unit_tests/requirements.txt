@@ -7,3 +7,4 @@ mujoco
 onnxruntime
 pybullet
 pykos
+scipy
