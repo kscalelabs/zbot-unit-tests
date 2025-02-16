@@ -1,0 +1,135 @@
+{
+    "timestamp": "20250215_223535",
+    "args": {
+        "embodiment": "gpr",
+        "load_model": "/home/dpsh/ilab_install_new/sim/examples/new.kinfer",
+        "keyboard_use": false,
+        "log_h5": false,
+        "h5_out_dir": "sim/resources",
+        "render": true,
+        "terrain": false,
+        "video": false
+    },
+    "model_info": {
+        "num_actions": 10,
+        "num_observations": 570,
+        "robot_effort": [
+            60,
+            40,
+            40,
+            60,
+            17
+        ],
+        "robot_stiffness": [
+            300,
+            120,
+            120,
+            300,
+            40
+        ],
+        "robot_damping": [
+            5,
+            5,
+            5,
+            5,
+            5
+        ],
+        "sim_dt": 0.001,
+        "sim_decimation": 10,
+        "tau_factor": 1.0,
+        "num_joints": 10
+    },
+    "policy_path": "/home/dpsh/ilab_install_new/sim/examples/new.kinfer",
+    "input_structure": {
+        "command_velocity": {
+            "x_vel.1": {
+                "shape": [
+                    1
+                ],
+                "description": "Forward velocity command"
+            },
+            "y_vel.1": {
+                "shape": [
+                    1
+                ],
+                "description": "Lateral velocity command"
+            },
+            "rot.1": {
+                "shape": [
+                    1
+                ],
+                "description": "Yaw velocity command"
+            }
+        },
+        "time": {
+            "t.1": {
+                "shape": [
+                    1
+                ],
+                "description": "Current simulation time"
+            }
+        },
+        "joint_states": {
+            "dof_pos.1": {
+                "shape": [
+                    10
+                ],
+                "description": "Joint positions relative to default pose"
+            },
+            "dof_vel.1": {
+                "shape": [
+                    10
+                ],
+                "description": "Joint velocities"
+            },
+            "prev_actions.1": {
+                "shape": [
+                    10
+                ],
+                "description": "Previous policy actions"
+            }
+        },
+        "imu": {
+            "projected_gravity.1": {
+                "shape": [
+                    3
+                ],
+                "description": "Gravity vector in robot frame"
+            }
+        },
+        "history": {
+            "buffer.1": {
+                "shape": [
+                    570
+                ],
+                "description": "Historical observation buffer"
+            }
+        }
+    },
+    "output_structure": {
+        "actions": {
+            "shape": [
+                10
+            ],
+            "description": "Raw policy actions"
+        },
+        "actions_scaled": {
+            "shape": [
+                10
+            ],
+            "description": "Scaled policy actions for PD control"
+        },
+        "x.3": {
+            "shape": [
+                570
+            ],
+            "description": "Updated observation buffer"
+        }
+    },
+    "sampling_info": {
+        "sim_dt": 0.001,
+        "sim_decimation": 10,
+        "policy_dt": 0.01,
+        "description": "Policy is called every sim_decimation steps, each step is sim_dt seconds"
+    }
+}
