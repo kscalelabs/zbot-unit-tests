@@ -89,11 +89,17 @@ async def configure_robot(kos: KOS) -> None:
         )
 
 
-async def play_trajectory(kos: KOS, trajectory_data: np.ndarray) -> None:
-    """Play the trajectory data on the robot."""
+async def play_trajectory(kos: KOS, trajectory_data: np.ndarray, dt: float = 1 / 50) -> None:
+    """Play the trajectory data on the robot with fixed time step.
+
+    Args:
+        kos: KOS instance for robot control
+        trajectory_data: Array of trajectory positions
+        dt: Time step in seconds (default: 1/50s = 50Hz)
+    """
     logger.info(f"Playing trajectory with {len(trajectory_data)} timesteps")
     logger.info(f"Trajectory data shape: {trajectory_data.shape}")
-    logger.info("\nPress Enter to step through each timestep, or '1' + Enter to play continuously")
+    logger.info(f"Control frequency: {1/dt:.1f}Hz")
 
     # Create a mapping from actuator IDs to CSV column indices for leg motors
     id_to_column = {
@@ -113,13 +119,12 @@ async def play_trajectory(kos: KOS, trajectory_data: np.ndarray) -> None:
     actuator_map = {actuator.actuator_id: actuator for actuator in ACTUATOR_LIST}
 
     try:
-        # Get initial input for continuous or step mode
-        user_input = input()
-        continuous_mode = user_input.strip() == "1"
+        start_time = time.time()
+        next_time = start_time + dt
 
         for step_idx, step in enumerate(trajectory_data):
+            current_time = time.time()
             commands = []
-            logger.info(f"\nStep {step_idx} commands:")
 
             # Process leg motors from CSV data
             for motor_id, column_idx in id_to_column.items():
@@ -128,11 +133,7 @@ async def play_trajectory(kos: KOS, trajectory_data: np.ndarray) -> None:
                     position = step[column_idx]
                     # Negate left knee values
                     if motor_id == 34:  # left knee
-                        logger.info(f"  {actuator.joint_name} (motor {motor_id}): BEFORE NEGATION {position:.3f}")
                         position = position * -1.0
-                        logger.info(f"  {actuator.joint_name} (motor {motor_id}): AFTER NEGATION {position:.3f}")
-                    else:
-                        logger.info(f"  {actuator.joint_name} (motor {motor_id}): {position:.3f}")
                     commands.append({"actuator_id": motor_id, "position": position})
                 except IndexError:
                     logger.error(f"Could not get data for {actuator.joint_name} (motor {motor_id})")
@@ -140,12 +141,10 @@ async def play_trajectory(kos: KOS, trajectory_data: np.ndarray) -> None:
             # Send commands to robot
             await kos.actuator.command_actuators(commands)
 
-            # If not in continuous mode, wait for user input
-            if not continuous_mode:
-                input("Press Enter for next step...")
-
-            # Small delay to maintain control frequency
-            await asyncio.sleep(0.001)
+            # Sleep precisely until next control step
+            if next_time > current_time:
+                await asyncio.sleep(next_time - current_time)
+            next_time += dt
 
     except KeyboardInterrupt:
         logger.info("\nStopping trajectory playback")
@@ -160,7 +159,7 @@ async def main() -> None:
     parser.add_argument(
         "--sim-only", action="store_true", help="Run simulation only without connecting to the real robot"
     )
-    parser.add_argument("--scale", type=float, default=7.0, help="Scaling factor for trajectory values")
+    parser.add_argument("--scale", type=float, default=10.0, help="Scaling factor for trajectory values")
     args = parser.parse_args()
 
     colorlogging.configure(level=logging.DEBUG if args.debug else logging.INFO)
