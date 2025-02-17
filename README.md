@@ -58,10 +58,7 @@ ks robots urdf mujoco kbot-v1
 
 ## Roadmap
 
-| Status | Replicated | Name      | Description                                |
-| ------ | ---------- | --------- | ------------------------------------------ |
-| 🚧     | ❌         | `test_00` | kos-sim matching real robot test          |
-| 🚧     | ❌         | `test_01` | play recorded actions test                |
+Please see issues: https://github.com/kscalelabs/kbot-unit-tests/issues
 
 
 ## Assets 
