@@ -32,10 +32,16 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-5. Run the tests
-
+4. Start `kos-sim` server backend in a separate terminal:
 ```bash
-make test
+kos-sim kbot-v1 --no-render # disable render of MuJoCo
+```
+
+5. Run the tests in another terminal:
+
+Example:
+```bash
+python kbot_unit_tests/test_01.py
 ```
 
 ### Additional Tests
@@ -56,3 +62,9 @@ ks robots urdf mujoco kbot-v1
 | ------ | ---------- | --------- | ------------------------------------------ |
 | 🚧     | ❌         | `test_00` | kos-sim matching real robot test          |
 | 🚧     | ❌         | `test_01` | play recorded actions test                |
+
+
+## Assets 
+| Name | Description | Date Added | PR Link | Video Link |
+| recording_00 | Isaac Gym stable policy with old urdf | 2025m02d15 | |  |
+| recording_01 | Manual velocity scale | 2025m02d16 | https://photos.app.goo.gl/ZMFP185dwuCtf3ex5 |

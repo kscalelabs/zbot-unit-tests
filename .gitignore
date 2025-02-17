@@ -20,5 +20,6 @@ dist/
 *.so
 out*/
 
-# Virtual environment
+# Environment
 .venv/
+.kos-sim/
