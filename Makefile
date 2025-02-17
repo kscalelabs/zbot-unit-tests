@@ -1,12 +1,12 @@
 # Makefile
 
 define HELP_MESSAGE
-zbot-unit-tests
+kbot-unit-tests
 
 # Installing
 
-1. Create a new Conda environment: `conda create --name zbot-unit-tests python=3.11`
-2. Activate the environment: `conda activate zbot-unit-tests`
+1. Create a new Conda environment: `conda create --name kbot-unit-tests python=3.11`
+2. Activate the environment: `conda activate kbot-unit-tests`
 3. Install the package: `make install-dev`
 
 # Running Tests
@@ -44,19 +44,19 @@ static-checks:
 # ------------------------ #
 
 test-00:
-	python -m zbot_unit_tests.test_00
+	python -m kbot_unit_tests.test_00
 .PHONY: test-00
 
 test-01:
-	python -m zbot_unit_tests.test_01
+	python -m kbot_unit_tests.test_01
 .PHONY: test-01
 
 test-02:
-	python -m zbot_unit_tests.test_02
+	python -m kbot_unit_tests.test_02
 .PHONY: test-02
 
 test-03:
-	python -m zbot_unit_tests.test_03
+	python -m kbot_unit_tests.test_03
 .PHONY: test-03
 
 test: test-00 test-01 test-02 test-03

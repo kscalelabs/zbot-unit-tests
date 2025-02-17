@@ -13,9 +13,14 @@ __pycache__/
 
 # Databases
 *.db
+utils/*.json
 
 # Build artifacts
 build/
 dist/
 *.so
 out*/
+
+# Environment
+.venv/
+.kos-sim/

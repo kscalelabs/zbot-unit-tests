@@ -1,9 +1,0 @@
-# requirements.txt
-
-colorlogging
-kscale
-matplotlib
-mujoco
-onnxruntime
-pybullet
-pykos
