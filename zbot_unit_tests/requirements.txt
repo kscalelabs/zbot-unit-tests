@@ -7,3 +7,9 @@ mujoco
 onnxruntime
 pybullet
 pykos
+aiortc
+opencv-python
+numpy
+requests
+ultralytics
+av
