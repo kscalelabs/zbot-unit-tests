@@ -1,0 +1,58 @@
+{
+    "checkpoint_path": "/home/dpsh/mujoco_ilab/klab/logs/rsl_rl/kbot_rough/2025-02-19_21-15-01/model_3400.pt",
+    "task": "Velocity-Rough-Kbot-Play-v0",
+    "num_envs": 50,
+    "seed": null,
+    "device": "cuda:0",
+    "experiment_name": "kbot_rough",
+    "timestamp": "2025-02-19_21-41-28_model_3400",
+    "imu_type": "projected_gravity",
+    "cli_args": {
+        "video": true,
+        "video_length": 500,
+        "disable_fabric": false,
+        "num_envs": 50,
+        "task": "Velocity-Rough-Kbot-Play-v0",
+        "seed": null,
+        "imu_type": "projected_gravity",
+        "experiment_name": null,
+        "run_name": null,
+        "resume": null,
+        "load_run": null,
+        "checkpoint": null,
+        "logger": null,
+        "log_project_name": null,
+        "device": "cuda:0",
+        "cpu": false,
+        "verbose": false,
+        "info": false,
+        "kit_args": "",
+        "headless": false,
+        "hide_ui": false,
+        "physics_gpu": 0,
+        "active_gpu": 0
+    },
+    "nn_metadata": {
+        "inputs_shape": [
+            500,
+            50,
+            66
+        ],
+        "outputs_shape": [
+            500,
+            50,
+            20
+        ],
+        "total_timesteps": 500,
+        "files": {
+            "data": {
+                "filename": "2025-02-19_21-41-28_model_3400_nn_data.npz",
+                "path": "/home/dpsh/mujoco_ilab/klab/logs/rsl_rl/kbot_rough/2025-02-19_21-15-01/imu_plots/2025-02-19_21-41-28_model_3400/2025-02-19_21-41-28_model_3400_nn_data.npz"
+            },
+            "metadata": {
+                "filename": "2025-02-19_21-41-28_model_3400_nn_metadata.json",
+                "path": "/home/dpsh/mujoco_ilab/klab/logs/rsl_rl/kbot_rough/2025-02-19_21-15-01/imu_plots/2025-02-19_21-41-28_model_3400/2025-02-19_21-41-28_model_3400_nn_metadata.json"
+            }
+        }
+    }
+}
