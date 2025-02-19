@@ -5,6 +5,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from pykos import KOS
+import subprocess
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -77,9 +79,9 @@ async def run_visualization(kos: KOS, update_rate: float = 0.05):
         await kos.imu.get_imu_values()
         logger.info("IMU connection successful!")
 
-        # Zero the IMU
-        logger.info("Zeroing IMU...")
-        await kos.imu.zero(duration=2.0)
+        # # Zero the IMU
+        # logger.info("Zeroing IMU...")
+        # await kos.imu.zero(duration=2.0)
         logger.info("IMU zeroed. Starting visualization...")
 
         while True:
@@ -107,7 +109,7 @@ async def run_visualization(kos: KOS, update_rate: float = 0.05):
 
 async def main():
     parser = argparse.ArgumentParser(description="IMU 3D Visualization")
-    parser.add_argument("--host", type=str, default="100.89.14.31", help="Robot IP address")
+    parser.add_argument("--host", type=str, default="localhost", help="Robot IP address")
     parser.add_argument("--port", type=int, default=50051, help="Robot port number")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
@@ -118,9 +120,12 @@ async def main():
     )
 
     logger.info(f"Connecting to robot at {args.host}:{args.port}")
+    sim_process = subprocess.Popen(["kos-sim", "kbot-v1"])
+    time.sleep(2)
 
-    async with KOS(ip=args.host, port=args.port) as kos:
-        await run_visualization(kos)
+    async with KOS(ip=args.host, port=args.port) as sim_kos:
+        await sim_kos.sim.reset()
+        await run_visualization(sim_kos)
 
 
 if __name__ == "__main__":

@@ -69,7 +69,7 @@ async def main() -> None:
  
     colorlogging.configure(level=logging.DEBUG if args.debug else logging.INFO)
 
-    sim_process = subprocess.Popen(["kos-sim", "kbot-v1", "--no-gravity"])
+    sim_process = subprocess.Popen(["kos-sim", "kbot-v1"])
     time.sleep(2)
     try:
         if args.sim_only:
@@ -104,7 +104,7 @@ async def main() -> None:
                         "actuator_id": actuator.actuator_id,
                         "position": TEST_ANGLE,
                     }]
-                    print(f"Sending command to actuator {actuator.actuator_id}: position {TEST_ANGLE}")
+                    print(f"Sending command to actuator {actuator.actuator_id}: name {actuator.joint_name} position {TEST_ANGLE}")
 
                     await sim_kos.actuator.command_actuators(command)
                     await asyncio.sleep(2)
@@ -151,7 +151,7 @@ async def main() -> None:
                             "actuator_id": actuator.actuator_id,
                             "position": TEST_ANGLE,
                         }]
-                        print(f"Sending command to actuator {actuator.actuator_id}: position {TEST_ANGLE}")
+                        print(f"Sending command to actuator {actuator.actuator_id}: name {actuator.joint_name} position {TEST_ANGLE}")
 
                         await asyncio.gather(
                             sim_kos.actuator.command_actuators(command),
