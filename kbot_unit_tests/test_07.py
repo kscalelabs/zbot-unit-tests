@@ -175,6 +175,8 @@ class RobotState:
         joint_signs: dict[str, float], 
         start_pos: dict[str, float], 
         vel_cmd: np.ndarray,
+        config: dict,
+        policy: ort.InferenceSession,
         idtoname: dict[int, str],
         nametoid: dict[str, int],
         indextoname: dict[int, str],
@@ -185,10 +187,13 @@ class RobotState:
         self.orn_offset = None
         self.start_pos = start_pos
         self.vel_cmd = vel_cmd
+        self.config = config
+        self.policy = policy
         self.idtoname = idtoname
         self.nametoid = nametoid
         self.indextoname = indextoname
         self.nametoindex = nametoindex
+        self.prev_action = np.zeros(len(joint_names), dtype=np.float32)
         
     async def offset_in_place(self, kos: KOS, joint_names: list[str] | None = None) -> None:
         """Capture current position as zero offset."""
@@ -297,30 +302,29 @@ class RobotState:
         return position_deg * self.joint_signs[joint_name] - self.joint_offsets[joint_name]
 
 
-async def inner_loop(
-    kos: KOS,
-    robot_state: RobotState,
-    session: ort.InferenceSession,
-    config: dict,
-    prev_action: np.ndarray,
-) -> None:
-    
-    obs = await robot_state.get_obs(kos, prev_action)
+    async def inner_loop(
+        self,
+        kos: KOS,
+    ) -> None:
+        
+        obs = await self.get_obs(kos, self.prev_action)
 
-    input_name = session.get_inputs()[0].name
-    actions_raw = session.run(
-        None, {input_name: obs.reshape(1, -1).astype(np.float32)}
-    )[0][0]  # shape (20,)
-    
-    actions = actions_raw * config["actions"]["joint_pos"]["scale"]
-    logger.debug(f"actions: {actions}")
-    
-    commands = robot_state.map_isaac_to_kos_sim(actions)
-    [logger.debug(f"  {cmd['actuator_id']}: {cmd['position']:.2f} deg") for cmd in commands]
-    
-    await kos.actuator.command_actuators(commands)
-    
-    return actions_raw
+        input_name = self.policy.get_inputs()[0].name
+        actions_raw = self.policy.run(
+            None, {input_name: obs.reshape(1, -1).astype(np.float32)}
+        )[0][0]  # shape (20,)
+        self.prev_action = actions_raw
+        
+        actions = actions_raw * self.config["actions"]["joint_pos"]["scale"]
+
+        logger.debug(f"actions: {actions}")
+        
+        commands = self.map_isaac_to_kos_sim(actions)
+        [logger.debug(f"  {cmd['actuator_id']}: {cmd['position']:.2f} deg") for cmd in commands]
+        
+        await kos.actuator.command_actuators(commands)
+        
+        return None
 
 
 async def run_robot(args: argparse.Namespace) -> None:
@@ -342,6 +346,8 @@ async def run_robot(args: argparse.Namespace) -> None:
         joint_signs=joint_signs,
         start_pos=start_pos,
         vel_cmd=vel_cmd,
+        config=config,
+        policy=session,
         idtoname=idtoname,
         nametoid=nametoid,
         indextoname=indextoname,
@@ -373,14 +379,9 @@ async def run_robot(args: argparse.Namespace) -> None:
 
             if args.sim_only:
                 print("Running in simulation-only mode...")
-                actions_raw = await inner_loop(
+                _ = await robot_state.inner_loop(
                     kos = sim_kos,
-                    robot_state = robot_state,
-                    session = session,
-                    config = config,
-                    prev_action = prev_action,
                 )
-                prev_action = actions_raw
                 await asyncio.sleep(0.01)
 
 
@@ -400,7 +401,7 @@ async def main() -> None:
     args.sim_only = True  # Force sim-only mode to always be True
  
     colorlogging.configure(level=logging.DEBUG if args.debug else logging.INFO)
-    sim_process = subprocess.Popen(["kos-sim", "kbot-v1-feet", "--no-gravity"])
+    sim_process = subprocess.Popen(["kos-sim", "kbot-v1-feet"])
     time.sleep(2)
     try:
         await run_robot(args)
