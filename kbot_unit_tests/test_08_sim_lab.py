@@ -16,13 +16,101 @@ import onnx
 import onnxruntime as ort
 import mediapy as media
 import logging
-
+from typing import Union
 import math
+import cv2
 
-
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+def save_video_cv2(frames: Union[np.ndarray, list[np.ndarray]], 
+                  output_path: str,
+                  fps: int = 30,
+                  resize_factor: float = 1.0) -> None:  # 1.0 means no resize, 0.5 means half size
+    """
+    Save video frames using OpenCV - with compression options.
+    
+    Args:
+        frames: Either a list of numpy arrays or a single 4D numpy array (N,H,W,C)
+        output_path: Path to save the video file
+        fps: Frames per second (default 30)
+        resize_factor: Factor to resize frames (1.0 means original size)
+    """
+    if isinstance(frames, np.ndarray):
+        if len(frames.shape) != 4:
+            raise ValueError("If passing numpy array, must be 4D (N,H,W,C)")
+        N, H, W, C = frames.shape
+    else:
+        if not frames:
+            raise ValueError("Empty frames list")
+        H, W = frames[0].shape[:2]
+        C = frames[0].shape[2] if len(frames[0].shape) == 3 else 1
+        N = len(frames)
+
+    # Calculate new dimensions if resizing
+    if resize_factor != 1.0:
+        new_W = int(W * resize_factor)
+        new_H = int(H * resize_factor)
+        # Make sure dimensions are even (required by some codecs)
+        new_W = new_W + (new_W % 2)
+        new_H = new_H + (new_H % 2)
+    else:
+        new_W, new_H = W, H
+
+    # Use x264 codec with good compression settings
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(output_path, fourcc, fps, (new_W, new_H))
+
+    if not out.isOpened():
+        # Fallback to XVID codec if mp4v fails
+        out.release()
+        fourcc = cv2.VideoWriter_fourcc(*'XVID')
+        output_path = output_path.replace('.mp4', '.avi')
+        out = cv2.VideoWriter(output_path, fourcc, fps, (new_W, new_H))
+        if not out.isOpened():
+            raise RuntimeError("Failed to open video writer with both mp4v and XVID codecs")
+
+    try:
+        # Write frames with progress bar
+        iterator = range(N) if isinstance(frames, np.ndarray) else frames
+        for frame in tqdm(iterator, desc="Saving video frames"):
+            if isinstance(frames, np.ndarray):
+                frame = frames[frame]  # Get frame from numpy array if using range iterator
+            
+            # Convert to uint8 if needed
+            if frame.dtype != np.uint8:
+                frame = (frame * 255).astype(np.uint8)
+            
+            # Ensure BGR format for OpenCV
+            if C == 3:
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            
+            # Resize if needed
+            if resize_factor != 1.0:
+                frame = cv2.resize(frame, (new_W, new_H), interpolation=cv2.INTER_AREA)
+            
+            out.write(frame)
+    finally:
+        out.release()
+
+    # After saving, use ffmpeg to compress the video further if available
+    try:
+        import subprocess
+        compressed_path = output_path.replace('.mp4', '_compressed.mp4').replace('.avi', '_compressed.mp4')
+        subprocess.run([
+            'ffmpeg', '-i', output_path,
+            '-c:v', 'libx264',
+            '-preset', 'slow',  # slower preset = better compression
+            '-crf', '28',  # Constant Rate Factor: 18-28 is good, higher = more compression
+            '-y',  # Overwrite output file if it exists
+            compressed_path
+        ], check=True, capture_output=True)
+        
+        # Replace original with compressed version if compression succeeded
+        os.replace(compressed_path, output_path)
+    except (subprocess.SubprocessError, FileNotFoundError) as e:
+        logger.warning(f"Could not compress video with ffmpeg: {e}")
+        logger.warning("Using original video file")
 
 def get_gravity_orientation(quaternion):
     """
@@ -92,7 +180,7 @@ class Runner:
         "right_hip_yaw_03": 0.0,
         "right_knee_04": -math.radians(40),
         "right_ankle_02": math.radians(20)
-        }
+    }
 
         # Initialize model
         if terrain:
@@ -100,7 +188,8 @@ class Runner:
         elif in_the_air:
             mujoco_model_path = f"resources/{embodiment}/robot_air.xml"
         else:
-            mujoco_model_path = f"resources/{embodiment}/robot.mjcf"
+            # mujoco_model_path = f"resources/{embodiment}/robot.mjcf"
+            mujoco_model_path = f"resources/{embodiment}/robot_feet.mjcf"
         
         logger.info(f"Using robot file: {os.path.abspath(mujoco_model_path)}")
         
@@ -439,6 +528,31 @@ class Runner:
                 last_act_isaac                     # 20
             ])
 
+            logger.debug("obs values:")
+            # Command velocities
+            logger.debug(f"  0: cmd_vel_x: {obs[0]:.3f}")
+            logger.debug(f"  1: cmd_vel_y: {obs[1]:.3f}")
+            logger.debug(f"  2: cmd_vel_yaw: {obs[2]:.3f}")
+            
+            # Projected gravity
+            logger.debug(f"  3: proj_grav_x: {obs[3]:.3f}")
+            logger.debug(f"  4: proj_grav_y: {obs[4]:.3f}") 
+            logger.debug(f"  5: proj_grav_z: {obs[5]:.3f}")
+
+            # Joint positions
+            for i in range(20):
+                logger.debug(f"  {i+6}: joint_pos_{i}: {obs[i+6]:.3f}")
+
+            # Joint velocities  
+            for i in range(20):
+                logger.debug(f"  {i+26}: joint_vel_{i}: {obs[i+26]:.3f}")
+
+            # Last actions
+            for i in range(20):
+                logger.debug(f"  {i+46}: last_action_{i}: {obs[i+46]:.3f}")
+
+            breakpoint()
+
 
             # Run the ONNX policy
             input_name = self.policy.get_inputs()[0].name
@@ -488,7 +602,12 @@ class Runner:
     def save_video(self, filename: str = "episode.mp4"):
         """Save recorded frames as a video file."""
         if not self.render and self.frames:
-            media.write_video(filename, self.frames, fps=self.framerate)
+            save_video_cv2(
+                self.frames, 
+                filename, 
+                fps=self.framerate,
+                resize_factor=0.75  # Reduce resolution to 75%
+            )
 
 
 if __name__ == "__main__":
@@ -501,7 +620,7 @@ if __name__ == "__main__":
     parser.add_argument("--render", action="store_true", help="Render the terrain.")
     args = parser.parse_args()
 
-    x_vel_cmd, y_vel_cmd, yaw_vel_cmd = -0.9, 0.0, 0.2
+    x_vel_cmd, y_vel_cmd, yaw_vel_cmd = -0.0, 0.0, 0.0
 
     # Get the most recent yaml and onnx files from the checkpoint directory
     yaml_files = [f for f in os.listdir(args.model_path) if f.endswith('env.yaml')]
