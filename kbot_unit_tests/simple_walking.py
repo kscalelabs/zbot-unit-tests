@@ -13,7 +13,8 @@ import numpy as np
 import onnx
 import onnxruntime as ort
 import pykos
-from kinfer.inference.python import ONNXModel
+# from kinfer.inference.python import ONNXModel
+from typing import Any
 from pykos import KOS
 from scipy.spatial.transform import Rotation as R
 
@@ -129,7 +130,7 @@ def map_mujoco_to_isaac(mujoco_to_isaac_mapping, mujoco_position):
 
 
 async def simple_walking(
-    policy: ONNXModel,
+    policy: Any,
     default_position: list[float], 
     host: str, 
     port: int
@@ -157,9 +158,9 @@ async def simple_walking(
         for actuator, pos in zip(ACTUATOR_LIST, default_position):
             joint_values.append({"name": actuator.joint_name, "pos": pos})
 
-        breakpoint()
+        # breakpoint()
         await sim_kos.sim.reset(
-            # pos={"x": base_pos[0], "y": base_pos[1], "z": base_pos[2]},
+            pos={"x": base_pos[0], "y": base_pos[1], "z": base_pos[2]},
             quat={"w": base_quat[0], "x": base_quat[1], "y": base_quat[2], "z": base_quat[3]},
             joints=joint_values
         )
