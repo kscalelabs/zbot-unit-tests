@@ -189,7 +189,7 @@ class Runner:
             mujoco_model_path = f"resources/{embodiment}/robot_air.xml"
         else:
             # mujoco_model_path = f"resources/{embodiment}/robot.mjcf"
-            mujoco_model_path = f"resources/{embodiment}/robot_feet.mjcf"
+            mujoco_model_path = f"assets/resources/{embodiment}/robot_feet.mjcf"
         
         logger.info(f"Using robot file: {os.path.abspath(mujoco_model_path)}")
         
@@ -551,7 +551,7 @@ class Runner:
             for i in range(20):
                 logger.debug(f"  {i+46}: last_action_{i}: {obs[i+46]:.3f}")
 
-            breakpoint()
+            # breakpoint()
 
 
             # Run the ONNX policy
