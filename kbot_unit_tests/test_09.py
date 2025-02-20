@@ -2,15 +2,15 @@
 
 import argparse
 import asyncio
+import logging
 import time
 from typing import Dict, List, Union
 
+import colorlogging
 import numpy as np
 from kinfer.inference.python import ONNXModel
 from pykos import KOS
 from scipy.spatial.transform import Rotation as R
-import logging
-import colorlogging
 
 # Joint configuration from real robot
 JOINT_NAME_LIST = [

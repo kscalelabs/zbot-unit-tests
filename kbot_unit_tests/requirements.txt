@@ -1,10 +1,14 @@
 # requirements.txt
 
 colorlogging
+kos-sim
 kscale
 matplotlib
 mujoco
+onnx
 onnxruntime
+opencv-python
 pybullet
 pykos
 scipy
+tqdm
