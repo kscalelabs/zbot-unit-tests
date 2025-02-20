@@ -113,24 +113,24 @@ class Actuator:
 
 ACTUATOR_LIST: list[Actuator] = [
     Actuator(11, 1, 85.0, 2.0, 60.0, "left_shoulder_pitch_03"),
-    Actuator(12, 5, 85.0, 2.0, 60.0, "left_shoulder_roll_03"),
-    Actuator(13, 9, 30.0, 1.0, 17.0, "left_shoulder_yaw_02"),
-    Actuator(14, 13, 30.0, 1.0, 17.0, "left_elbow_02"),
-    Actuator(15, 17, 30.0, 1.0, 17.0, "left_wrist_02"),
+    Actuator(12, 5, 85.0, 2.0, 60.0, "left_shoulder_roll_03"), 
+    Actuator(13, 9, 80.0, 1.0, 17.0, "left_shoulder_yaw_02"),
+    Actuator(14, 13, 80.0, 1.0, 17.0, "left_elbow_02"),
+    Actuator(15, 17, 80.0, 1.0, 17.0, "left_wrist_02"),
     Actuator(21, 3, 85.0, 2.0, 60.0, "right_shoulder_pitch_03"),
     Actuator(22, 7, 85.0, 2.0, 60.0, "right_shoulder_roll_03"),
-    Actuator(23, 11, 30.0, 1.0, 17.0, "right_shoulder_yaw_02"),
-    Actuator(24, 15, 30.0, 1.0, 17.0, "right_elbow_02"),
-    Actuator(25, 19, 30.0, 1.0, 17.0, "right_wrist_02"),
-    Actuator(31, 0, 85.0, 3.0, 80.0, "left_hip_pitch_04"),
+    Actuator(23, 11, 80.0, 1.0, 17.0, "right_shoulder_yaw_02"), 
+    Actuator(24, 15, 80.0, 1.0, 17.0, "right_elbow_02"),
+    Actuator(25, 19, 80.0, 1.0, 17.0, "right_wrist_02"),
+    Actuator(31, 0, 100.0, 7.0, 80.0, "left_hip_pitch_04"),
     Actuator(32, 4, 85.0, 2.0, 60.0, "left_hip_roll_03"),
-    Actuator(33, 8, 30.0, 2.0, 60.0, "left_hip_yaw_03"),
-    Actuator(34, 12, 60.0, 2.0, 80.0, "left_knee_04"),
+    Actuator(33, 8, 85.0, 2.0, 60.0, "left_hip_yaw_03"),
+    Actuator(34, 12, 100.0, 7.0, 80.0, "left_knee_04"),
     Actuator(35, 16, 80.0, 1.0, 17.0, "left_ankle_02"),
-    Actuator(41, 2, 85.0, 3.0, 80.0, "right_hip_pitch_04"),
+    Actuator(41, 2, 100.0, 7.0, 80.0, "right_hip_pitch_04"),
     Actuator(42, 6, 85.0, 2.0, 60.0, "right_hip_roll_03"),
-    Actuator(43, 10, 30.0, 2.0, 60.0, "right_hip_yaw_03"),
-    Actuator(44, 14, 60.0, 2.0, 80.0, "right_knee_04"),
+    Actuator(43, 10, 85.0, 2.0, 60.0, "right_hip_yaw_03"),
+    Actuator(44, 14, 100.0, 7.0, 80.0, "right_knee_04"),
     Actuator(45, 18, 80.0, 1.0, 17.0, "right_ankle_02"),
 ]
 
@@ -221,7 +221,10 @@ class RobotState:
             curr_value = states.states[i].position if pos else states.states[i].velocity
             curr_value_rad = np.deg2rad(curr_value)
 
-            result[self.nametoindex[curr_name]] = curr_value_rad - self.start_pos[curr_name]
+            if pos:
+                result[self.nametoindex[curr_name]] = curr_value_rad - self.start_pos[curr_name]
+            else:
+                result[self.nametoindex[curr_name]] = curr_value_rad
 
             logger.debug(
                 "{'pos' if pos else 'vel'} obs i: %s, id: %s, name: %s,  value: %s",
@@ -319,17 +322,29 @@ async def run_robot(args: argparse.Namespace) -> None:
     # Performance tracking variables
     start_time = time.time()
     end_time = start_time + 10  # Run for 10 seconds like test_00
+    frequency = 50  # Hz
 
     async with KOS(ip=args.host, port=args.port) as sim_kos:
+        # # Initialize position and orientation
+        base_pos = [0.0, 0.0, 1.15]  # x, y, z
+        base_quat = [1.0, 0.0, 0.0, 0.0]  # w, x, y, z
+
+        # Create joint values list in the format expected by sim_pb2.JointValue
+        joint_values = []
+        for actuator, pos in zip(ACTUATOR_LIST, [start_pos[name] for name in isaac_joint_names]):
+            joint_values.append({"name": actuator.joint_name, "pos": pos})
+
+        # breakpoint()
         await sim_kos.sim.reset(
-            initial_state={
-                "qpos": [0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 1.0] + [0.0] * 20,
-            },
+            pos={"x": base_pos[0], "y": base_pos[1], "z": base_pos[2]},
+            quat={"w": base_quat[0], "x": base_quat[1], "y": base_quat[2], "z": base_quat[3]},
+            joints=joint_values
         )
-        await configure_robot(sim_kos)
+        # await configure_robot(sim_kos)
         await robot_state.offset_in_place(sim_kos)
 
         while time.time() < end_time:
+            loop_start_time = time.time()
             print(f"Time: {time.time()} end_time: {end_time}")
 
             if args.sim_only:
@@ -337,7 +352,10 @@ async def run_robot(args: argparse.Namespace) -> None:
                 _ = await robot_state.inner_loop(
                     kos=sim_kos,
                 )
-                await asyncio.sleep(0.01)
+                waiting_time = 1 / frequency
+                loop_end_time = time.time()
+                sleep_time = max(0, waiting_time - (loop_end_time - loop_start_time))
+                await asyncio.sleep(sleep_time)
 
 
 async def main() -> None:
@@ -353,7 +371,7 @@ async def main() -> None:
     parser.add_argument(
         "--checkpoint-path",
         type=str,
-        default="assets/saved_checkpoints/2025-02-19_21-41-28_model_3400",
+        default="assets/saved_checkpoints/2025-02-20_00-28-33_model_2600",
     )
     # default="assets/saved_checkpoints/2025-02-19_02-47-37_model_4250")
     parser.add_argument("--vel_cmd", type=str, default="0.2, 0.2, 0.2")
