@@ -345,6 +345,8 @@ class Runner:
         self.count_lowlevel = 0
         logger.debug("Model info: %s", self.model_info)
 
+        breakpoint()
+
     def _setup_joint_mappings(self, config: Dict) -> None:
         """Set up mappings between MuJoCo and Isaac joint names."""
         mujoco_joint_names = []
@@ -393,6 +395,8 @@ class Runner:
         self.isaac_to_mujoco_mapping = {
             isaac_joint_names[i]: mujoco_joint_names[i] for i in range(len(isaac_joint_names))
         }
+
+        breakpoint()
         # TODO - update the values
         # self.test_mappings()
 
@@ -426,74 +430,6 @@ class Runner:
             isaac_index = list(self.mujoco_to_isaac_mapping.values()).index(mujoco_name)
             isaac_position[isaac_index] = mujoco_position[mujoco_index]
         return isaac_position
-
-    def test_mappings(self):
-        mujoco_position = np.array(
-            [
-                -0.9,
-                -0.9,
-                0.2,
-                0.2,
-                -0.377,
-                0.377,
-                0.796,
-                -0.796,
-                0.377,
-                -0.377,
-                0.1,
-                -0.1,
-                0.2,
-                -0.2,
-                0.3,
-                -0.3,
-                0.4,
-                -0.4,
-                0.5,
-                -0.5,
-            ]
-        )
-        isaac_position = np.array(
-            [
-                -0.9,
-                -0.9,  # hip pitch
-                0.2,
-                0.2,  # hip roll
-                -0.377,
-                0.377,  # hip yaw
-                0.796,
-                -0.796,  # knee
-                0.377,
-                -0.377,  # ankle
-                0.1,
-                -0.1,  # shoulder pitch
-                0.2,
-                -0.2,  # shoulder roll
-                0.3,
-                -0.3,  # shoulder yaw
-                0.4,
-                -0.4,  # elbow
-                0.5,
-                -0.5,  # wrist
-            ]
-        )
-
-        # Map positions
-        isaac_to_mujoco = self.map_isaac_to_mujoco(isaac_position)
-        mujoco_to_isaac = self.map_mujoco_to_isaac(mujoco_position)
-
-        # Print mappings in a side-by-side format for easy comparison
-        print("\nMapping Comparison:")
-        print("-" * 80)
-        print(f"{'Index':<6}{'MuJoCo':<25}{'Isaac':<25}{'MuJoCo Value':<15}{'Isaac Value':<15}")
-        print("-" * 80)
-        for i in range(len(mujoco_position)):
-            mujoco_name = list(self.mujoco_to_isaac_mapping.keys())[i]
-            isaac_name = self.mujoco_to_isaac_mapping[mujoco_name]
-            print(f"{i:<6}{mujoco_name:<25}{isaac_name:<25}{mujoco_position[i]:>12.3f}{isaac_to_mujoco[i]:>15.3f}")
-        print("-" * 80)
-
-        assert np.allclose(mujoco_position, isaac_to_mujoco)
-        assert np.allclose(isaac_position, mujoco_to_isaac)
 
     def step(self, x_vel_cmd: float, y_vel_cmd: float, yaw_vel_cmd: float):
         """Execute one step of the simulation.
@@ -547,6 +483,7 @@ class Runner:
             logger.debug("Linear acceleration (m/s²): %s", imu_lin_acc)
             logger.debug("Gravity projection: %s", projected_gravity)
 
+        breakpoint()
         # Build the observation only if it's time to do policy inference
         if self.count_lowlevel % self.model_info["sim_decimation"] == 0:
             # Position offset from default
@@ -654,7 +591,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_path",
         type=str,
-        default="assets/saved_checkpoints/2025-02-19_21-41-28_model_3400",
+        default="assets/saved_checkpoints/2025-02-20_00-28-33_model_2600",
         help="Model path.",
     )
     parser.add_argument("--terrain", action="store_true", help="Render the terrain.")
