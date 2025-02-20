@@ -1,0 +1,23 @@
+{
+    "inputs_shape": [
+        100,
+        50,
+        66
+    ],
+    "outputs_shape": [
+        100,
+        50,
+        20
+    ],
+    "total_timesteps": 100,
+    "files": {
+        "data": {
+            "filename": "2025-02-20_00-28-33_model_2600_nn_data.npz",
+            "path": "/home/dpsh/mujoco_ilab/klab/logs/rsl_rl/kbot_rough/2025-02-19_22-11-28/imu_plots/2025-02-20_00-28-33_model_2600/2025-02-20_00-28-33_model_2600_nn_data.npz"
+        },
+        "metadata": {
+            "filename": "2025-02-20_00-28-33_model_2600_nn_metadata.json",
+            "path": "/home/dpsh/mujoco_ilab/klab/logs/rsl_rl/kbot_rough/2025-02-19_22-11-28/imu_plots/2025-02-20_00-28-33_model_2600/2025-02-20_00-28-33_model_2600_nn_metadata.json"
+        }
+    }
+}
