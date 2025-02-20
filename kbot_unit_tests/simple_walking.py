@@ -202,7 +202,7 @@ async def simple_walking(
             # r = R.from_quat([raw_quat.x, raw_quat.y, raw_quat.z, raw_quat.w])
             # gvec = r.apply(np.array([0.0, 0.0, -1.0]), inverse=True).astype(np.double)
             projected_gravity = get_gravity_orientation(
-                np.array([raw_quat.x, raw_quat.y, raw_quat.z, raw_quat.w])
+                np.array([raw_quat.w, raw_quat.x, raw_quat.y, raw_quat.z])
             )
             cur_pos_obs = positions - default
             cur_vel_obs = velocities
