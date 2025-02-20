@@ -135,13 +135,34 @@ async def simple_walking(
     port: int
 ) -> None:
     async with KOS(ip=host, port=port) as sim_kos:
-        # while True:
-        await sim_kos.sim.reset(
-            initial_state={
-                    "qpos": [0.0, 0.0, 1.05, 1.0, 0.0, 0.0, 0.0] + default_position
-                }
+        for actuator in ACTUATOR_LIST:
+            await sim_kos.actuator.configure_actuator(
+                actuator_id=actuator.actuator_id,
+                kp=actuator.kp,
+                kd=actuator.kd,
+                max_torque=actuator.max_torque
             )
-        # await asyncio.sleep(0.02)
+        # await sim_kos.sim.reset(
+        #     initial_state={
+        #         "qpos": [0.0, 0.0, 1.05, 1.0, 0.0, 0.0, 0.0] + default_position
+        #     }
+        # )
+
+        # Initialize position and orientation
+        base_pos = [0.0, 0.0, 1.05]  # x, y, z
+        base_quat = [1.0, 0.0, 0.0, 0.0]  # w, x, y, z
+        
+        # Create joint values list in the format expected by sim_pb2.JointValue
+        joint_values = []
+        for actuator, pos in zip(ACTUATOR_LIST, default_position):
+            joint_values.append({"name": actuator.joint_name, "pos": pos})
+
+        breakpoint()
+        await sim_kos.sim.reset(
+            # pos={"x": base_pos[0], "y": base_pos[1], "z": base_pos[2]},
+            quat={"w": base_quat[0], "x": base_quat[1], "y": base_quat[2], "z": base_quat[3]},
+            joints=joint_values
+        )
 
         count = 0
         start_time = time.time()
@@ -164,7 +185,25 @@ async def simple_walking(
         mujoco_to_isaac_mapping = {
             'left_shoulder_pitch_03': 'left_hip_pitch_04', 
             'left_shoulder_roll_03': 'left_shoulder_pitch_03', 
-            'left_shoulder_yaw_02': 'right_hip_pitch_04', 'left_elbow_02': 'right_shoulder_pitch_03', 'left_wrist_02': 'left_hip_roll_03', 'right_shoulder_pitch_03': 'left_shoulder_roll_03', 'right_shoulder_roll_03': 'right_hip_roll_03', 'right_shoulder_yaw_02': 'right_shoulder_roll_03', 'right_elbow_02': 'left_hip_yaw_03', 'right_wrist_02': 'left_shoulder_yaw_02', 'left_hip_pitch_04': 'right_hip_yaw_03', 'left_hip_roll_03': 'right_shoulder_yaw_02', 'left_hip_yaw_03': 'left_knee_04', 'left_knee_04': 'left_elbow_02', 'left_ankle_02': 'right_knee_04', 'right_hip_pitch_04': 'right_elbow_02', 'right_hip_roll_03': 'left_ankle_02', 'right_hip_yaw_03': 'left_wrist_02', 'right_knee_04': 'right_ankle_02', 'right_ankle_02': 'right_wrist_02'}
+            'left_shoulder_yaw_02': 'right_hip_pitch_04', 
+            'left_elbow_02': 'right_shoulder_pitch_03', 
+            'left_wrist_02': 'left_hip_roll_03', 
+            'right_shoulder_pitch_03': 'left_shoulder_roll_03', 
+            'right_shoulder_roll_03': 'right_hip_roll_03', 
+            'right_shoulder_yaw_02': 'right_shoulder_roll_03', 
+            'right_elbow_02': 'left_hip_yaw_03', 
+            'right_wrist_02': 'left_shoulder_yaw_02', 
+            'left_hip_pitch_04': 'right_hip_yaw_03', 
+            'left_hip_roll_03': 'right_shoulder_yaw_02', 
+            'left_hip_yaw_03': 'left_knee_04', 
+            'left_knee_04': 'left_elbow_02', 
+            'left_ankle_02': 'right_knee_04', 
+            'right_hip_pitch_04': 'right_elbow_02', 
+            'right_hip_roll_03': 'left_ankle_02', 
+            'right_hip_yaw_03': 'left_wrist_02', 
+            'right_knee_04': 'right_ankle_02', 
+            'right_ankle_02': 'right_wrist_02'
+        }
         isaac_to_mujoco_mapping = {
             'left_hip_pitch_04': 'left_shoulder_pitch_03', 
             'left_shoulder_pitch_03': 'left_shoulder_roll_03', 
