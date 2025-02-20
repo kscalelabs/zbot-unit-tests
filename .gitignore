@@ -13,6 +13,7 @@ __pycache__/
 
 # Databases
 *.db
+utils/*.json
 
 # Build artifacts
 build/
