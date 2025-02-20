@@ -245,19 +245,24 @@ class RobotState:
             target_pos = np.rad2deg(actions[i] + self.start_pos[curr_name])
             commands.append({"actuator_id": curr_id, "position": target_pos})
         return commands
-
-    async def get_obs(
-        self,
-        kos: KOS,
-        prev_action: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Get robot state with offset compensation."""
-        # Batch state requests
-        states, euler_data, imu_sensor_data = await asyncio.gather(
+    
+    async def gather_kos_data(self, kos: KOS) -> tuple[list[Any], Any, Any]:
+        """Gather data from KOS."""
+        return await asyncio.gather(
             kos.actuator.get_actuators_state([actuator.actuator_id for actuator in ACTUATOR_LIST]),
             kos.imu.get_euler_angles(),
             kos.imu.get_imu_values(),
         )
+
+    def get_obs(
+        self,
+        states: list[Any],
+        euler_data: Any,
+        imu_sensor_data: Any,
+        prev_action: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Get robot state with offset compensation."""
+        # Batch state requests
 
         q = self.map_kos_sim_to_isaac(states, pos=True)
         dq = self.map_kos_sim_to_isaac(states, pos=False)
@@ -280,7 +285,8 @@ class RobotState:
         return position_deg - self.joint_offsets[joint_name]
 
     async def inner_loop(self, kos: KOS) -> None:
-        obs = await self.get_obs(kos, self.prev_action)
+        states, euler_data, imu_sensor_data = await self.gather_kos_data(kos)
+        obs = self.get_obs(states, euler_data, imu_sensor_data, self.prev_action)
         input_name = self.policy.get_inputs()[0].name
         actions_raw = self.policy.run(None, {input_name: obs.reshape(1, -1).astype(np.float32)})[0][0]  # shape (20,)
         self.prev_action = actions_raw
@@ -340,8 +346,6 @@ async def run_robot(args: argparse.Namespace) -> None:
             quat={"w": base_quat[0], "x": base_quat[1], "y": base_quat[2], "z": base_quat[3]},
             joints=joint_values
         )
-        # await configure_robot(sim_kos)
-        await robot_state.offset_in_place(sim_kos)
 
         while time.time() < end_time:
             loop_start_time = time.time()
@@ -355,6 +359,7 @@ async def run_robot(args: argparse.Namespace) -> None:
                 waiting_time = 1 / frequency
                 loop_end_time = time.time()
                 sleep_time = max(0, waiting_time - (loop_end_time - loop_start_time))
+                logger.debug("Sleeping for %s seconds", sleep_time)
                 await asyncio.sleep(sleep_time)
 
 
