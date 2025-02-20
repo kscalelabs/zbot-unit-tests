@@ -137,19 +137,14 @@ async def simple_walking(
 ) -> None:
     async with KOS(ip=host, port=port) as sim_kos:
         # USE CONFIGURE ACTUATOR AT YOUR OWN RISK 
-        # for actuator in ACTUATOR_LIST: 
-        #     await sim_kos.actuator.configure_actuator(
-        #         actuator_id=actuator.actuator_id,
-        #         kp=actuator.kp,
-        #         kd=actuator.kd,
-        #         max_torque=actuator.max_torque
-        #     )
-        # await sim_kos.sim.reset(
-        #     initial_state={
-        #         "qpos": [0.0, 0.0, 1.05, 1.0, 0.0, 0.0, 0.0] + default_position
-        #     }
-        # )
 
+        for actuator in ACTUATOR_LIST: 
+            await sim_kos.actuator.configure_actuator(
+                actuator_id=actuator.actuator_id,
+                kp=actuator.kp,
+                kd=actuator.kd,
+                max_torque=actuator.max_torque
+            )
         # Initialize position and orientation
         base_pos = [0.0, 0.0, 1.05]  # x, y, z
         base_quat = [1.0, 0.0, 0.0, 0.0]  # w, x, y, z
@@ -165,6 +160,8 @@ async def simple_walking(
             quat={"w": base_quat[0], "x": base_quat[1], "y": base_quat[2], "z": base_quat[3]},
             joints=joint_values
         )
+
+
 
         count = 0
         start_time = time.time()
