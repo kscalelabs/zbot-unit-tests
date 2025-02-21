@@ -277,6 +277,13 @@ class Runner:
             logger.debug("  Dynamic friction: %f", friction_dynamic[i])
             logger.debug("  Activation velocity: %f", activation_vel[i])
 
+        if "joint_pos" in config["actions"]:
+            action_scale = config["actions"]["joint_pos"]["scale"]
+        elif "relative_joint_pos" in config["actions"]:
+            action_scale = config["actions"]["relative_joint_pos"]["scale"]
+        else:
+            raise ValueError("No action scaling found in config")
+
         self.model_info = {
             "sim_dt": config["sim"]["dt"],
             "sim_decimation": config["decimation"],
@@ -285,10 +292,11 @@ class Runner:
             "robot_effort": robot_effort,
             "robot_stiffness": robot_stiffness,
             "robot_damping": robot_damping,
-            "action_scale": config["actions"]["joint_pos"]["scale"],
+            "action_scale": action_scale,
             "friction_static": friction_static,
             "friction_dynamic": friction_dynamic,
             "activation_vel": activation_vel,
+            "config": config,
         }
         logger.info("Action scale: %f", self.model_info["action_scale"])
         self.model.opt.timestep = self.model_info["sim_dt"]
@@ -345,7 +353,7 @@ class Runner:
         self.count_lowlevel = 0
         logger.debug("Model info: %s", self.model_info)
 
-        breakpoint()
+        # breakpoint()
 
     def _setup_joint_mappings(self, config: Dict) -> None:
         """Set up mappings between MuJoCo and Isaac joint names."""
@@ -396,7 +404,7 @@ class Runner:
             isaac_joint_names[i]: mujoco_joint_names[i] for i in range(len(isaac_joint_names))
         }
 
-        breakpoint()
+        # breakpoint()
         # TODO - update the values
         # self.test_mappings()
 
@@ -483,7 +491,7 @@ class Runner:
             logger.debug("Linear acceleration (m/s²): %s", imu_lin_acc)
             logger.debug("Gravity projection: %s", projected_gravity)
 
-        breakpoint()
+        # breakpoint()
         # Build the observation only if it's time to do policy inference
         if self.count_lowlevel % self.model_info["sim_decimation"] == 0:
             # Position offset from default
@@ -548,8 +556,31 @@ class Runner:
             self.last_action = curr_actions.copy()
 
             # Scale actions, then map Isaac->MuJoCo indexing
-            curr_actions_scaled = curr_actions * self.model_info["action_scale"]
-            self.target_q = self.map_isaac_to_mujoco(curr_actions_scaled)
+
+            final_action = None
+            if "relative_joint_pos" in self.model_info["config"]["actions"]:
+
+                max_action = self.model_info["config"]["actions"]["relative_joint_pos"]["max_action"]
+
+                # scale 
+                curr_actions_scaled = curr_actions * self.model_info["action_scale"]
+                # offset 
+                curr_actions_scaled_offset = curr_actions_scaled + self.default
+                # tanh
+                curr_actions_delta = np.tanh(curr_actions_scaled_offset) * max_action
+                # relative
+                curr_actions_relative = curr_actions_delta + cur_pos_obs
+                final_action = curr_actions_relative
+            elif "joint_pos" in self.model_info["config"]["actions"]:
+                # scale
+                curr_actions_scaled = curr_actions * self.model_info["action_scale"]
+                # offset
+                final_action = curr_actions_scaled
+            else:
+                raise ValueError("No action scaling found in config")
+
+
+            self.target_q = self.map_isaac_to_mujoco(final_action)
 
             # Render if needed
             if self.render:
@@ -599,7 +630,7 @@ if __name__ == "__main__":
     parser.add_argument("--render", action="store_true", help="Render the terrain.")
     args = parser.parse_args()
 
-    x_vel_cmd, y_vel_cmd, yaw_vel_cmd = -0.0, 0.0, 0.1
+    x_vel_cmd, y_vel_cmd, yaw_vel_cmd = -1.9, 0.0, 0.0
 
     # Get the most recent yaml and onnx files from the checkpoint directory
     yaml_files = [f for f in os.listdir(args.model_path) if f.endswith("env.yaml")]
