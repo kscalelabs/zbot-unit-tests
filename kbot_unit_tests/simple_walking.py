@@ -131,7 +131,6 @@ def map_mujoco_to_isaac(mujoco_to_isaac_mapping, mujoco_position):
 
 async def simple_walking(
     policy: Any,
-    default_position: list[float], 
     host: str, 
     port: int
 ) -> None:
@@ -146,10 +145,18 @@ async def simple_walking(
                 max_torque=actuator.max_torque
             )
         # Initialize position and orientation
-        base_pos = [0.0, 0.0, 1.25]  # x, y, z
+        base_pos = [0.0, 0.0, 1.05]  # x, y, z
         base_quat = [1.0, 0.0, 0.0, 0.0]  # w, x, y, z
         
         # Create joint values list in the format expected by sim_pb2.JointValue
+
+        
+        default_position = [
+            0.0, 0.0, 0.0, -1.5707963267948966, 0.0, 0.0, 0.0, 0.0, 1.5707963267948966, 0.0, 
+            0.3490658503988659, 0.0, 0.0, 0.6981317007977318, -0.3490658503988659, -0.3490658503988659, 0.0, 0.0,
+            -0.6981317007977318, 0.3490658503988659
+        ]
+        
         joint_values = []
         for actuator, pos in zip(ACTUATOR_LIST, default_position):
             joint_values.append({"name": actuator.joint_name, "pos": pos})
@@ -322,13 +329,8 @@ async def main() -> None:
         policy = onnx.load(policy_path)
         session = ort.InferenceSession(policy.SerializeToString())
 
-        default_position = [
-            0.0, 0.0, 0.0, -1.5707963267948966, 0.0, 0.0, 0.0, 0.0, 1.5707963267948966, 0.0, 
-            0.3490658503988659, 0.0, 0.0, 0.6981317007977318, -0.3490658503988659, -0.3490658503988659, 0.0, 0.0,
-            -0.6981317007977318, 0.3490658503988659
-        ]
 
-        await simple_walking(session, default_position, args.host, args.port)
+        await simple_walking(session, args.host, args.port)
 
     except Exception:
         logger.exception("Simulator error")
