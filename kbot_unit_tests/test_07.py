@@ -235,14 +235,20 @@ class RobotState:
             )
         return result
 
-    def map_isaac_to_kos_sim(self, actions: np.ndarray) -> list[dict]:
+    def map_isaac_to_kos_sim(self, actions: np.ndarray, q: np.ndarray) -> list[dict]:
         """Map Isaac state to KOS state."""
         commands = []
 
         for i in range(len(actions)):
             curr_name = self.indextoname[i]
             curr_id = self.nametoid[curr_name]
-            target_pos = np.rad2deg(actions[i] + self.start_pos[curr_name])
+            if "relative_joint_pos" in self.config["actions"]:
+                curr_pos = q[self.nametoindex[curr_name]]
+                target_pos = np.rad2deg(actions[i] + curr_pos)
+            elif "joint_pos" in self.config["actions"]:
+                target_pos = np.rad2deg(actions[i])
+            else:
+                raise ValueError("No action scaling found in config")
             commands.append({"actuator_id": curr_id, "position": target_pos})
         return commands
     
@@ -275,25 +281,30 @@ class RobotState:
         logger.debug("dq: %s", dq)
         logger.debug("prev_action: %s", prev_action)
 
-        obs = np.concatenate([self.vel_cmd, gvec, q, dq, prev_action])
 
-        return obs
 
-    def apply_command(self, position: float, joint_name: str) -> float:
-        """Apply sign first, then offset to outgoing command. Convert from radians to degrees."""
-        position_deg = np.rad2deg(position)
-        return position_deg - self.joint_offsets[joint_name]
+        return self.vel_cmd, gvec, q, dq, prev_action
+
 
     async def inner_loop(self, kos: KOS) -> None:
         states, euler_data, imu_sensor_data = await self.gather_kos_data(kos)
-        obs = self.get_obs(states, euler_data, imu_sensor_data, self.prev_action)
+        vel_cmd, gvec, q, dq, prev_action = self.get_obs(states, euler_data, imu_sensor_data, self.prev_action)
+        obs = np.concatenate([vel_cmd, gvec, q, dq, prev_action])
         input_name = self.policy.get_inputs()[0].name
         actions_raw = self.policy.run(None, {input_name: obs.reshape(1, -1).astype(np.float32)})[0][0]  # shape (20,)
         self.prev_action = actions_raw
-        actions = actions_raw * self.config["actions"]["joint_pos"]["scale"]
+
+        # check if joint_pos or relative_joint_pos is in the config
+        if "joint_pos" in self.config["actions"]:
+            actions = actions_raw * self.config["actions"]["joint_pos"]["scale"]
+        elif "relative_joint_pos" in self.config["actions"]:
+            actions = actions_raw * self.config["actions"]["relative_joint_pos"]["scale"]
+        else:
+            raise ValueError("No action scaling found in config")
+        
         logger.debug("actions: %s", actions)
 
-        commands = self.map_isaac_to_kos_sim(actions)
+        commands = self.map_isaac_to_kos_sim(actions, q)
         for cmd in commands:
             logger.debug("  %s: %s deg", cmd["actuator_id"], cmd["position"])
 
@@ -331,13 +342,21 @@ async def run_robot(args: argparse.Namespace) -> None:
     frequency = 50  # Hz
 
     async with KOS(ip=args.host, port=args.port) as sim_kos:
-        # # Initialize position and orientation
-        base_pos = [0.0, 0.0, 1.15]  # x, y, z
+        # Initialize position and orientation
+        base_pos = [0.0, 0.0, 1.05]  # x, y, z
         base_quat = [1.0, 0.0, 0.0, 0.0]  # w, x, y, z
-
+        
         # Create joint values list in the format expected by sim_pb2.JointValue
+
+        
+        default_position = [
+            0.0, 0.0, 0.0, -1.5707963267948966, 0.0, 0.0, 0.0, 0.0, 1.5707963267948966, 0.0, 
+            0.3490658503988659, 0.0, 0.0, 0.6981317007977318, -0.3490658503988659, -0.3490658503988659, 0.0, 0.0,
+            -0.6981317007977318, 0.3490658503988659
+        ]
+        
         joint_values = []
-        for actuator, pos in zip(ACTUATOR_LIST, [start_pos[name] for name in isaac_joint_names]):
+        for actuator, pos in zip(ACTUATOR_LIST, default_position):
             joint_values.append({"name": actuator.joint_name, "pos": pos})
 
         # breakpoint()
@@ -346,6 +365,8 @@ async def run_robot(args: argparse.Namespace) -> None:
             quat={"w": base_quat[0], "x": base_quat[1], "y": base_quat[2], "z": base_quat[3]},
             joints=joint_values
         )
+
+        await configure_robot(sim_kos)
 
         while time.time() < end_time:
             loop_start_time = time.time()
@@ -379,7 +400,7 @@ async def main() -> None:
         default="assets/saved_checkpoints/2025-02-20_00-28-33_model_2600",
     )
     # default="assets/saved_checkpoints/2025-02-19_02-47-37_model_4250")
-    parser.add_argument("--vel_cmd", type=str, default="0.2, 0.2, 0.2")
+    parser.add_argument("--vel_cmd", type=str, default="0.0, 0.0, 0.0")
     args = parser.parse_args()
 
     args.sim_only = True  # Force sim-only mode to always be True
