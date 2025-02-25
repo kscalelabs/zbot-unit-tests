@@ -2,7 +2,12 @@ import asyncio
 import sys
 import subprocess
 import time
+import logging
 from pykos import KOS
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger("test_03")
 
 ACTUATOR_MAPPING = {
     "left_shoulder_yaw": 11,
@@ -27,14 +32,17 @@ ACTUATOR_MAPPING = {
 
 
 async def run_robot(kos: KOS, is_real: bool) -> None:
+    robot_type = "real robot" if is_real else "simulator"
+    logger.info(f"Configuring actuators for {robot_type}")
 
     for actuator_id in ACTUATOR_MAPPING.values():
         if is_real:
             kp, kd = 32, 32
         else:
-            gains = {actuator_id: (50, 15) for actuator_id in ACTUATOR_MAPPING.values()}
-            kp, kd = gains.get(actuator_id, (32, 32))
+            gains = {actuator_id: (100, 50) for actuator_id in ACTUATOR_MAPPING.values()}
+            kp, kd = gains.get(actuator_id, (100, 50))
 
+        logger.debug(f"Configuring actuator {actuator_id} with kp={kp}, kd={kd}")
         await kos.actuator.configure_actuator(
             actuator_id=actuator_id,
             kp=kp,
@@ -46,52 +54,90 @@ async def run_robot(kos: KOS, is_real: bool) -> None:
 
 
 async def main():
+    logger.info("Starting test_03")
 
-    print("Starting simulator server...")
-    sim_process = subprocess.Popen(["kos-sim", "zbot-v2-fixed", "--no-gravity"])
+    logger.info("Starting simulator server...")
+    sim_process = subprocess.Popen(["kos-sim", "zbot-v2-fixed"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     time.sleep(2)
 
     try:
-        print("Running on both simulator and real robot simultaneously...")
-        async with KOS(ip="localhost", port=50051) as sim_kos, KOS(ip="10.33.11.170", port=50051) as real_kos:
+        logger.info("Running test on simulator...")
+        async with KOS(ip="localhost", port=50051) as sim_kos:
+            logger.info("Connected to simulator")
 
+            logger.info("Resetting simulator")
             await sim_kos.sim.reset()
+            time.sleep(1)
 
+            logger.info("Configuring simulator robot")
             sim_kos = await run_robot(sim_kos, False)
-            real_kos = await run_robot(real_kos, True)
 
-            print("Zeroing all joints...")
-            zero_commands = [{"actuator_id": actuator_id, "position": 0} for actuator_id in ACTUATOR_MAPPING.values()]
-            await asyncio.gather(
-                sim_kos.actuator.command_actuators(zero_commands), real_kos.actuator.command_actuators(zero_commands)
-            )
-            await asyncio.sleep(2)
+            logger.info("Connecting to real robot at 192.168.42.1...")
+            async with KOS(ip="192.168.42.1") as real_kos:
+                logger.info("Connected to real robot")
 
-            for joint_name, actuator_id in ACTUATOR_MAPPING.items():
-                print(f"Testing {joint_name} (ID: {actuator_id})")
-                test_angle = -45
+                logger.info("Configuring real robot")
+                real_kos = await run_robot(real_kos, True)
 
-                command = [
-                    {"actuator_id": actuator_id, "position": -test_angle if actuator_id in [21, 23, 24] else test_angle}
+                for kos, name in [(sim_kos, "SIM"), (real_kos, "REAL")]:
+                    logger.info(f"[{name}] Getting initial actuator states")
+                    response = await kos.actuator.get_actuators_state(list(ACTUATOR_MAPPING.values()))
+                    for state in response.states:
+                        logger.info(
+                            f"[{name}] Initial state of actuator {state.actuator_id}: position={state.position:.2f}, velocity={state.velocity:.2f}"
+                        )
+
+                logger.info("Zeroing all joints with velocity...")
+                zero_commands = [
+                    {"actuator_id": actuator_id, "position": 0, "velocity": 1}
+                    for actuator_id in ACTUATOR_MAPPING.values()
                 ]
-                sim_command = [
-                    {"actuator_id": actuator_id, "position": -test_angle if actuator_id in [21, 23, 24] else test_angle}
-                ]
-                await asyncio.gather(
-                    sim_kos.actuator.command_actuators(sim_command), real_kos.actuator.command_actuators(command)
-                )
+                logger.debug(f"Sending zero commands: {zero_commands}")
+
+                await sim_kos.actuator.command_actuators(zero_commands)
+                await real_kos.actuator.command_actuators(zero_commands)
                 await asyncio.sleep(2)
 
-                command = [{"actuator_id": actuator_id, "position": 0}]
-                sim_command = [{"actuator_id": actuator_id, "position": 0}]
-                await asyncio.gather(
-                    sim_kos.actuator.command_actuators(sim_command), real_kos.actuator.command_actuators(command)
-                )
-                await asyncio.sleep(1)
+                # Test each joint
+                for joint_name, actuator_id in ACTUATOR_MAPPING.items():
+                    logger.info(f"Testing {joint_name} (ID: {actuator_id})")
+                    test_angle = -45  # Full 45 degree angles as requested
+                    adjusted_angle = -test_angle if actuator_id in [21, 23, 24] else test_angle
 
+                    # Send command with velocity
+                    command = [{"actuator_id": actuator_id, "position": adjusted_angle, "velocity": 10}]
+                    logger.debug(f"Sending command to {joint_name}: {command}")
+
+                    await sim_kos.actuator.command_actuators(command)
+                    await real_kos.actuator.command_actuators(command)
+
+                    # Wait and check position
+                    await asyncio.sleep(2)
+
+                    for kos, name in [(sim_kos, "SIM"), (real_kos, "REAL")]:
+                        response = await kos.actuator.get_actuators_state([actuator_id])
+                        state = response.states[0]
+                        logger.info(
+                            f"[{name}] Actuator {actuator_id} ({joint_name}): "
+                            f"position={state.position:.2f} (target was {adjusted_angle}), "
+                            f"velocity={state.velocity:.2f}"
+                        )
+
+                    # Return to zero with velocity
+                    command = [{"actuator_id": actuator_id, "position": 0, "velocity": 10}]
+                    logger.debug(f"Returning {joint_name} to zero: {command}")
+
+                    await sim_kos.actuator.command_actuators(command)
+                    await real_kos.actuator.command_actuators(command)
+                    await asyncio.sleep(1)
+
+    except Exception as e:
+        logger.error(f"Error during test: {e}", exc_info=True)
     finally:
+        logger.info("Terminating simulator")
         sim_process.terminate()
         sim_process.wait()
+        logger.info("Test completed")
 
 
 if __name__ == "__main__":
