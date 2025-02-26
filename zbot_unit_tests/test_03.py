@@ -8,7 +8,7 @@ import subprocess
 import time
 import logging
 from pykos import KOS
-from motion import Robot, DEFAULT_ACTUATOR_MAPPING
+from motion import Robot
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -38,18 +38,12 @@ async def main():
             logger.info("Configuring simulator robot")
             await sim_robot.configure(sim_kos, is_real=False)
 
-            # Start monitoring simulator robot
-            await sim_robot.start_monitoring(sim_kos, interval=0.5)
-
             logger.info("Connecting to real robot at 192.168.42.1...")
             async with KOS(ip="192.168.42.1") as real_kos:
                 logger.info("Connected to real robot")
 
                 logger.info("Configuring real robot")
                 await real_robot.configure(real_kos, is_real=True)
-
-                # Start monitoring real robot
-                await real_robot.start_monitoring(real_kos, interval=0.5)
 
                 # Get initial states for both robots
                 logger.info("[SIM] Getting initial actuator states")
@@ -70,10 +64,9 @@ async def main():
                 logger.info("Zeroing all joints with velocity 1...")
                 await sim_robot.zero_all(sim_kos, velocity=1)
                 await real_robot.zero_all(real_kos, velocity=1)
-                await asyncio.sleep(2)
 
                 # Test each joint
-                for joint_name in DEFAULT_ACTUATOR_MAPPING.keys():
+                for joint_name in real_robot.joints.keys():
                     logger.info(f"Testing {joint_name}")
                     test_angle = -45
                     # Adjust angle for certain joints that need reversed direction
@@ -88,7 +81,6 @@ async def main():
                     await real_robot.move(real_kos, {joint_name: adjusted_angle}, velocity=10)
 
                     # Wait for movement
-                    await asyncio.sleep(2)
 
                     # Check final position on both robots
                     sim_states = await sim_robot.get_states(sim_kos, [joint_name])
@@ -106,18 +98,8 @@ async def main():
                     await real_robot.move(real_kos, {joint_name: 0}, velocity=10)
                     await asyncio.sleep(1)
 
-                # Stop monitoring both robots
-                await sim_robot.stop_monitoring()
-                await real_robot.stop_monitoring()
-
     except Exception as e:
         logger.error(f"Error during test: {e}", exc_info=True)
-    finally:
-        # Stop monitoring if still running
-        if sim_robot.is_monitoring:
-            await sim_robot.stop_monitoring()
-        if real_robot.is_monitoring:
-            await real_robot.stop_monitoring()
 
         logger.info("Terminating simulator")
         sim_process.terminate()
