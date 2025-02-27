@@ -59,12 +59,12 @@ async def load_policy_and_config(checkpoint_path: str) -> tuple[ort.InferenceSes
 
 isaac_joint_names = [
     "left_hip_yaw",
-    "left_shoulder_yaw", 
+    "left_shoulder_yaw",
     "right_hip_yaw",
     "right_shoulder_yaw",
     "left_hip_roll",
     "left_shoulder_pitch",
-    "right_hip_roll", 
+    "right_hip_roll",
     "right_shoulder_pitch",
     "left_hip_pitch",
     "left_elbow",
@@ -75,7 +75,7 @@ isaac_joint_names = [
     "right_knee",
     "right_gripper",
     "left_ankle",
-    "right_ankle"
+    "right_ankle",
 ]
 
 start_pos = {
@@ -199,7 +199,7 @@ class RobotState:
         nametoid: dict[str, int],
         indextoname: dict[int, str],
         nametoindex: dict[str, int],
-    ):
+    ) -> None:
         self.joint_offsets = {name: 0.0 for name in joint_names}
         self.orn_offset = None
         self.start_pos = start_pos
@@ -285,7 +285,7 @@ class RobotState:
             target_pos = np.rad2deg(actions[i] + self.start_pos[curr_name])
             commands.append({"actuator_id": curr_id, "position": target_pos})
         return commands
-    
+
     async def gather_kos_data(self, kos: KOS) -> tuple[list[Any], Any, Any]:
         """Gather data from KOS."""
         states = await kos.actuator.get_actuators_state([actuator.actuator_id for actuator in ACTUATOR_LIST])
@@ -309,7 +309,7 @@ class RobotState:
         dq = self.map_kos_sim_to_isaac(states, pos=False)
 
         # gvec, quat, omega = self.get_gravity_vector(euler_data, imu_sensor_data)
-        
+
         gvec = np.array([0.01029401, -0.26815441, -0.96332127])
 
         logger.debug("vel_cmd: %s", self.vel_cmd)
@@ -317,9 +317,9 @@ class RobotState:
         logger.debug("q: %s", q)
         logger.debug("dq: %s", dq)
         logger.debug("prev_action: %s", prev_action)
-        
+
         logger.debug("Shape of vel_cmd: %s", self.vel_cmd.shape)
-        logger.debug("Shape of gvec: %s", gvec.shape) 
+        logger.debug("Shape of gvec: %s", gvec.shape)
         logger.debug("Shape of q: %s", q.shape)
         logger.debug("Shape of dq: %s", dq.shape)
         logger.debug("Shape of prev_action: %s", prev_action.shape)
@@ -338,15 +338,20 @@ class RobotState:
         obs = self.get_obs(states, euler_data, imu_sensor_data, self.prev_action)
         input_name = self.policy.get_inputs()[0].name
         actions_raw = self.policy.run(None, {input_name: obs.reshape(1, -1).astype(np.float32)})[0][0]  # shape (20,)
-        
-        # actions_raw = np.zeros_like(actions_raw) # ZERO ACTIONS 
+
+        # actions_raw = np.zeros_like(actions_raw) # ZERO ACTIONS
         self.prev_action = actions_raw
         actions = actions_raw * self.config["actions"]["joint_pos"]["scale"]
         logger.debug("actions: %s", actions)
 
         commands = self.map_isaac_to_kos_sim(actions)
         for cmd in commands:
-            logger.debug("cmd id: %s, pos: %s deg, name: %s", cmd["actuator_id"], cmd["position"], self.idtoname[cmd["actuator_id"]])
+            logger.debug(
+                "cmd id: %s, pos: %s deg, name: %s",
+                cmd["actuator_id"],
+                cmd["position"],
+                self.idtoname[cmd["actuator_id"]],
+            )
 
         await kos.actuator.command_actuators(commands)
 
@@ -396,7 +401,7 @@ async def run_robot(args: argparse.Namespace) -> None:
         await sim_kos.sim.reset(
             pos={"x": base_pos[0], "y": base_pos[1], "z": base_pos[2]},
             quat={"w": base_quat[0], "x": base_quat[1], "y": base_quat[2], "z": base_quat[3]},
-            joints=joint_values
+            joints=joint_values,
         )
 
         while time.time() < end_time:
