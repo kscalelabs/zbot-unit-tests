@@ -8,6 +8,7 @@ import asyncio
 import logging
 import math
 import time
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,25 +32,15 @@ class Actuator:
 
 
 ACTUATOR_LIST: list[Actuator] = [
-    # actuator 31: left hip yaw (action index 1)
     Actuator(actuator_id=31, nn_id=0, kp=18.18, kd=1.46, max_torque=1.62, joint_name="left_hip_yaw"),
-    # actuator 32: left hip roll (action index 0)
     Actuator(actuator_id=32, nn_id=1, kp=18.18, kd=1.46, max_torque=1.62, joint_name="left_hip_roll"),
-    # actuator 33: left hip pitch (action index 2)
     Actuator(actuator_id=33, nn_id=2, kp=18.18, kd=1.46, max_torque=1.62, joint_name="left_hip_pitch"),
-    # actuator 34: left knee (action index 3)
     Actuator(actuator_id=34, nn_id=3, kp=18.18, kd=1.46, max_torque=1.62, joint_name="left_knee"),
-    # actuator 35: left ankle (action index 4)
     Actuator(actuator_id=35, nn_id=4, kp=18.18, kd=1.46, max_torque=1.62, joint_name="left_ankle"),
-    # actuator 41: right hip yaw (action index 6)
     Actuator(actuator_id=41, nn_id=5, kp=18.18, kd=1.46, max_torque=1.62, joint_name="right_hip_yaw"),
-    # actuator 42: right hip roll (action index 5)
     Actuator(actuator_id=42, nn_id=6, kp=18.18, kd=1.46, max_torque=1.62, joint_name="right_hip_roll"),
-    # actuator 43: right hip pitch (action index 7)
     Actuator(actuator_id=43, nn_id=7, kp=18.18, kd=1.46, max_torque=1.62, joint_name="right_hip_pitch"),
-    # actuator 44: right knee (action index 8)
     Actuator(actuator_id=44, nn_id=8, kp=18.18, kd=1.46, max_torque=1.62, joint_name="right_knee"),
-    # actuator 45: right ankle (action index 9)
     Actuator(actuator_id=45, nn_id=9, kp=18.18, kd=1.46, max_torque=1.62, joint_name="right_ankle"),
 ]
 
@@ -99,7 +90,7 @@ async def simple_walking(
             )
 
         await sim_kos.sim.reset(
-            pos={"x": 0.0, "y": 0.0, "z": 0.4295},
+            pos={"x": 0.0, "y": 0.0, "z": 0.405},
             quat={"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
             joints=[
                 {
@@ -167,7 +158,7 @@ async def simple_walking(
 
             policy_output = policy(input_data)
             positions = policy_output["actions_scaled"]
-            # positions = np.zeros_like(positions) # ZEROING ACTIONS !!!
+            positions = np.zeros_like(positions) # ZEROING ACTIONS !!!
             # positions[9] = 50.0
             curr_actions = policy_output["actions"]
             hist_obs = policy_output["x.3"]
@@ -198,8 +189,12 @@ async def main() -> None:
     args = parser.parse_args()
 
     colorlogging.configure(level=logging.DEBUG if args.debug else logging.INFO)
+    
+    # Start kos-sim
+    logger.info("Starting simulator server...")
+    sim_process = subprocess.Popen(["kos-sim", "zbot-v2-fixed"])
+    time.sleep(2)
 
-    model_path = args.model
 
     # Defines the default joint positions for the legs.
     default_position = [
@@ -214,7 +209,8 @@ async def main() -> None:
         -0.7960,  # right knee
         -0.3770,  # right ankle
     ]
-    await simple_walking(model_path, default_position, args.host, args.port, args.num_seconds)
+
+    await simple_walking(args.model, default_position, args.host, args.port, args.num_seconds)
 
 
 if __name__ == "__main__":
