@@ -1,145 +1,23 @@
-"""Runs reinforcement learning unit tests.
+"""Run reinforcement learning unit test for zbot.
 
-To see a video of the policy running in simulation, look in `assets/model_checkpoints/zbot_rl_policy/policy.mp4`.
+Runs a simple walking policy on the zbot.
 """
 
 import argparse
 import asyncio
 import logging
 import math
-import os
 import time
 from dataclasses import dataclass
-from typing import Any
+from pathlib import Path
 
 import colorlogging
 import numpy as np
-import onnx
 import onnxruntime as ort
-import yaml
 from pykos import KOS
 from scipy.spatial.transform import Rotation as R
 
 logger = logging.getLogger(__name__)
-
-
-async def load_policy_and_config(checkpoint_path: str) -> tuple[ort.InferenceSession, dict]:
-    try:
-        # List YAML and ONNX files in the given directory
-        yaml_files = [f for f in os.listdir(checkpoint_path) if f.endswith("env.yaml")]
-        policy_files = [f for f in os.listdir(checkpoint_path) if f.endswith(".onnx")]
-
-        if not yaml_files or not policy_files:
-            raise FileNotFoundError(f"Could not find env.yaml and .onnx files in {checkpoint_path}")
-
-        yaml_file = yaml_files[0]  # Use the first found YAML file
-        policy_file = policy_files[0]  # Use the first found ONNX file
-
-        policy_path = os.path.join(checkpoint_path, policy_file)
-        yaml_path = os.path.join(checkpoint_path, yaml_file)
-
-        logger.info("Loading policy from: %s", os.path.abspath(policy_path))
-        logger.info("Loading config from: %s", os.path.abspath(yaml_path))
-
-        # Load the policy and create an inference session
-        policy = onnx.load(policy_path)
-        session = ort.InferenceSession(policy.SerializeToString())
-
-        with open(yaml_path, "r") as f:
-            config = yaml.load(f, Loader=yaml.Loader)
-
-        logger.info("Loaded policy and config")
-
-        return session, config
-
-    except Exception as e:
-        logger.error("Error in load_policy_and_config: %s", e)
-        raise
-
-
-isaac_joint_names = [
-    "left_hip_yaw",
-    "left_shoulder_yaw",
-    "right_hip_yaw",
-    "right_shoulder_yaw",
-    "left_hip_roll",
-    "left_shoulder_pitch",
-    "right_hip_roll",
-    "right_shoulder_pitch",
-    "left_hip_pitch",
-    "left_elbow",
-    "right_hip_pitch",
-    "right_elbow",
-    "left_knee",
-    "left_gripper",
-    "right_knee",
-    "right_gripper",
-    "left_ankle",
-    "right_ankle",
-]
-
-start_pos = {
-    "left_hip_yaw": 0.0,
-    "left_shoulder_yaw": 0.0,
-    "right_hip_yaw": 0.0,
-    "right_shoulder_yaw": 0.0,
-    "left_hip_roll": 0.0,
-    "left_shoulder_pitch": 0.0,
-    "right_hip_roll": 0.0,
-    "right_shoulder_pitch": 0.0,
-    "left_hip_pitch": -math.radians(31.6),
-    "left_elbow": 0.0,
-    "right_hip_pitch": math.radians(31.6),
-    "right_elbow": 0.0,
-    "left_knee": math.radians(65.6),
-    "left_gripper": 0.0,
-    "right_knee": -math.radians(65.6),
-    "right_gripper": 0.0,
-    "left_ankle": math.radians(31.6),
-    "right_ankle": -math.radians(31.6),
-}
-
-# start_pos = {
-#     "left_hip_yaw": 0.0,
-#     "left_shoulder_yaw": 0.0,
-#     "right_hip_yaw": 0.0,
-#     "right_shoulder_yaw": 0.0,
-#     "left_hip_roll": 0.0,
-#     "left_shoulder_pitch": 0.0,
-#     "right_hip_roll": 0.0,
-#     "right_shoulder_pitch": 0.0,
-#     "left_hip_pitch": 0.0,
-#     "left_elbow": 0.0,
-#     "right_hip_pitch": 0.0,
-#     "right_elbow": 0.0,
-#     "left_knee": 0.0,
-#     "left_gripper": 0.0,
-#     "right_knee": 0.0,
-#     "right_gripper": 0.0,
-#     "left_ankle": 0.0,
-#     "right_ankle": 0.0,
-# }
-
-joint_inversions = {
-    "left_hip_yaw": 1,
-    "left_shoulder_yaw": 1,
-    "right_hip_yaw": 1,
-    "right_shoulder_yaw": 1,
-    "left_hip_roll": 1,
-    "left_shoulder_pitch": 1,
-    "right_hip_roll": 1,
-    "right_shoulder_pitch": 1,
-    "left_hip_pitch": 1,
-    "left_elbow": 1,
-    "right_hip_pitch": 1,
-    "right_elbow": 1,
-    "left_knee": 1,
-    "left_gripper": 1,
-    "right_knee": -1,
-    "right_gripper": 1,
-    "left_ankle": 1,
-    "right_ankle": 1,
-}
 
 
 @dataclass
@@ -153,297 +31,190 @@ class Actuator:
 
 
 ACTUATOR_LIST: list[Actuator] = [
-    Actuator(actuator_id=31, nn_id=1, kp=150.0, kd=5.084, max_torque=2.90, joint_name="left_hip_yaw"),
-    Actuator(actuator_id=11, nn_id=2, kp=150.0, kd=5.084, max_torque=2.90, joint_name="left_shoulder_yaw"),
-    Actuator(actuator_id=41, nn_id=3, kp=150.0, kd=5.084, max_torque=2.90, joint_name="right_hip_yaw"),
-    Actuator(actuator_id=21, nn_id=4, kp=150.0, kd=5.084, max_torque=2.90, joint_name="right_shoulder_yaw"),
-    Actuator(actuator_id=32, nn_id=5, kp=150.0, kd=5.084, max_torque=2.90, joint_name="left_hip_roll"),
-    Actuator(actuator_id=12, nn_id=6, kp=150.0, kd=5.084, max_torque=2.90, joint_name="left_shoulder_pitch"),
-    Actuator(actuator_id=42, nn_id=7, kp=150.0, kd=5.084, max_torque=2.90, joint_name="right_hip_roll"),
-    Actuator(actuator_id=22, nn_id=8, kp=150.0, kd=5.084, max_torque=2.90, joint_name="right_shoulder_pitch"),
-    Actuator(actuator_id=33, nn_id=9, kp=150.0, kd=5.084, max_torque=2.90, joint_name="left_hip_pitch"),
-    Actuator(actuator_id=13, nn_id=10, kp=150.0, kd=5.084, max_torque=2.90, joint_name="left_elbow"),
-    Actuator(actuator_id=43, nn_id=11, kp=150.0, kd=5.084, max_torque=2.90, joint_name="right_hip_pitch"),
-    Actuator(actuator_id=23, nn_id=12, kp=150.0, kd=5.084, max_torque=2.90, joint_name="right_elbow"),
-    Actuator(actuator_id=34, nn_id=13, kp=150.0, kd=5.084, max_torque=2.90, joint_name="left_knee"),
-    Actuator(actuator_id=14, nn_id=14, kp=150.0, kd=5.084, max_torque=2.90, joint_name="left_gripper"),
-    Actuator(actuator_id=44, nn_id=15, kp=150.0, kd=5.084, max_torque=2.90, joint_name="right_knee"),
-    Actuator(actuator_id=24, nn_id=16, kp=150.0, kd=5.084, max_torque=2.90, joint_name="right_gripper"),
-    Actuator(actuator_id=35, nn_id=17, kp=150.0, kd=5.084, max_torque=2.90, joint_name="left_ankle"),
-    Actuator(actuator_id=45, nn_id=18, kp=150.0, kd=5.084, max_torque=2.90, joint_name="right_ankle"),
+    # actuator 31: left hip yaw (action index 1)
+    Actuator(actuator_id=31, nn_id=0, kp=18.18, kd=1.46, max_torque=1.62, joint_name="left_hip_yaw"),
+    # actuator 32: left hip roll (action index 0)
+    Actuator(actuator_id=32, nn_id=1, kp=18.18, kd=1.46, max_torque=1.62, joint_name="left_hip_roll"),
+    # actuator 33: left hip pitch (action index 2)
+    Actuator(actuator_id=33, nn_id=2, kp=18.18, kd=1.46, max_torque=1.62, joint_name="left_hip_pitch"),
+    # actuator 34: left knee (action index 3)
+    Actuator(actuator_id=34, nn_id=3, kp=18.18, kd=1.46, max_torque=1.62, joint_name="left_knee"),
+    # actuator 35: left ankle (action index 4)
+    Actuator(actuator_id=35, nn_id=4, kp=18.18, kd=1.46, max_torque=1.62, joint_name="left_ankle"),
+    # actuator 41: right hip yaw (action index 6)
+    Actuator(actuator_id=41, nn_id=5, kp=18.18, kd=1.46, max_torque=1.62, joint_name="right_hip_yaw"),
+    # actuator 42: right hip roll (action index 5)
+    Actuator(actuator_id=42, nn_id=6, kp=18.18, kd=1.46, max_torque=1.62, joint_name="right_hip_roll"),
+    # actuator 43: right hip pitch (action index 7)
+    Actuator(actuator_id=43, nn_id=7, kp=18.18, kd=1.46, max_torque=1.62, joint_name="right_hip_pitch"),
+    # actuator 44: right knee (action index 8)
+    Actuator(actuator_id=44, nn_id=8, kp=18.18, kd=1.46, max_torque=1.62, joint_name="right_knee"),
+    # actuator 45: right ankle (action index 9)
+    Actuator(actuator_id=45, nn_id=9, kp=18.18, kd=1.46, max_torque=1.62, joint_name="right_ankle"),
 ]
 
+ACTUATOR_ID_TO_POLICY_IDX = {actuator.actuator_id: actuator.nn_id for actuator in ACTUATOR_LIST}
 
-async def configure_robot(kos: KOS) -> None:
-    for actuator in ACTUATOR_LIST:
-        await kos.actuator.configure_actuator(
-            actuator_id=actuator.actuator_id,
-            kp=actuator.kp,
-            kd=actuator.kd,
-            max_torque=actuator.max_torque,
-            torque_enabled=True,
-        )
+ACTUATOR_IDS = [actuator.actuator_id for actuator in ACTUATOR_LIST]
 
 
-class RobotState:
-    """Tracks robot state and handles offsets."""
+async def simple_walking(
+    model_path: str | Path,
+    default_position: list[float],
+    host: str,
+    port: int,
+    num_seconds: float | None = 10.0,
+) -> None:
+    """Runs a simple walking policy.
 
-    def __init__(
-        self,
-        joint_names: list[str],
-        start_pos: dict[str, float],
-        vel_cmd: np.ndarray,
-        config: dict,
-        policy: ort.InferenceSession,
-        idtoname: dict[int, str],
-        nametoid: dict[str, int],
-        indextoname: dict[int, str],
-        nametoindex: dict[str, int],
-    ) -> None:
-        self.joint_offsets = {name: 0.0 for name in joint_names}
-        self.orn_offset = None
-        self.start_pos = start_pos
-        self.vel_cmd = vel_cmd
-        self.config = config
-        self.policy = policy
-        self.idtoname = idtoname
-        self.nametoid = nametoid
-        self.indextoname = indextoname
-        self.nametoindex = nametoindex
-        self.prev_action = np.zeros(len(joint_names), dtype=np.float32)
+    Args:
+        model_path: The path to the ONNX model.
+        default_position: The default joint positions for the legs.
+        host: The host to connect to.
+        port: The port to connect to.
+        num_seconds: The number of seconds to run the policy for.
+    """
+    assert len(default_position) == len(ACTUATOR_LIST)
 
-    async def offset_in_place(self, kos: KOS, joint_names: list[str] | None = None) -> None:
-        """Capture current position as zero offset."""
-        # Get current joint positions (in degrees)
-        # states = await kos.actuator.get_actuators_state([JOINT_NAME_TO_ID[name] for name in joint_names])
-        # current_positions = {name: states.states[i].position for i, name in enumerate(joint_names)}
+    model_path = Path(model_path)
+    if not model_path.exists():
+        raise FileNotFoundError(f"Model file not found: {model_path}")
 
-        # # Store negative of current positions as offsets (in degrees)
-        # self.joint_offsets = {name: 0.0 for name, _ in current_positions.items()}
+    session = ort.InferenceSession(model_path)
 
-        # # Store IMU offset
-        # imu_data = await kos.imu.get_euler_angles()
-        # initial_quat = R.from_euler("xyz", [imu_data.roll, imu_data.pitch, imu_data.yaw], degrees=True).as_quat()
-        # self.orn_offset = R.from_quat(initial_quat).inv()
+    # Get input and output details
+    output_details = [{"name": x.name, "shape": x.shape, "type": x.type} for x in session.get_outputs()]
 
-        pass
+    def policy(input_data: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        results = session.run(None, input_data)
+        return {output_details[i]["name"]: results[i] for i in range(len(output_details))}
 
-    def get_gravity_vector(self, euler_data: Any, imu_sensor_data: Any) -> np.ndarray:
-        """Get gravity vector from IMU data."""
-        # Process IMU data with offset compensation
-        current_quat = R.from_euler("xyz", [euler_data.roll, euler_data.pitch, euler_data.yaw], degrees=True).as_quat()
-        if self.orn_offset is not None:
-            current_rot = R.from_quat(current_quat)
-            quat = (self.orn_offset * current_rot).as_quat()
-        else:
-            quat = current_quat
-
-        # Calculate gravity vector with offset compensation
-        r = R.from_quat(quat)
-        gvec = r.apply(np.array([-0.01298109, -0.27928606, -0.93012038]), inverse=True)
-
-        # Get angular velocity
-        gyro_x = imu_sensor_data.gyro_x or 0.0
-        gyro_y = imu_sensor_data.gyro_y or 0.0
-        gyro_z = imu_sensor_data.gyro_z or 0.0
-        # omega = np.deg2rad(np.array([-gyro_z, -gyro_y, gyro_x]))
-        omega = np.deg2rad(np.array([gyro_x, gyro_y, gyro_z]))
-        return gvec, quat, omega
-
-    def map_kos_sim_to_isaac(self, states: list[Any], pos: bool = True) -> np.ndarray:
-        """Map KOS state to Isaac state."""
-        result = np.zeros(len(isaac_joint_names))
-
-        for i in range(len(isaac_joint_names)):
-            curr_id = states.states[i].actuator_id
-            curr_name = self.idtoname[curr_id]
-            curr_value = states.states[i].position if pos else states.states[i].velocity
-            curr_value = joint_inversions[curr_name] * curr_value
-            curr_value_rad = np.deg2rad(curr_value)
-
-            if pos:
-                result[self.nametoindex[curr_name]] = curr_value_rad - self.start_pos[curr_name]
-            else:
-                result[self.nametoindex[curr_name]] = curr_value_rad
-
-            logger.debug(
-                "{'pos' if pos else 'vel'} obs i: %s, id: %s, name: %s,  value: %s",
-                i,
-                curr_id,
-                curr_name,
-                curr_value,
+    async with KOS(ip=host, port=port) as sim_kos:
+        for actuator in ACTUATOR_LIST:
+            await sim_kos.actuator.configure_actuator(
+                actuator_id=actuator.actuator_id,
+                kp=actuator.kp,
+                kd=actuator.kd,
+                max_torque=actuator.max_torque,
             )
-        return result
-
-    def map_isaac_to_kos_sim(self, actions: np.ndarray) -> list[dict]:
-        """Map Isaac state to KOS state."""
-        commands = []
-
-        for i in range(len(actions)):
-            curr_name = self.indextoname[i]
-            curr_id = self.nametoid[curr_name]
-            target_pos = np.rad2deg(actions[i] + self.start_pos[curr_name])
-            commands.append({"actuator_id": curr_id, "position": target_pos})
-        return commands
-
-    async def gather_kos_data(self, kos: KOS) -> tuple[list[Any], Any, Any]:
-        """Gather data from KOS."""
-        states = await kos.actuator.get_actuators_state([actuator.actuator_id for actuator in ACTUATOR_LIST])
-        # euler_data = await kos.imu.get_euler_angles()
-        # imu_data = await kos.imu.get_imu_values()
-        euler_data = None
-        imu_data = None
-        return states, euler_data, imu_data
-
-    def get_obs(
-        self,
-        states: list[Any],
-        euler_data: Any,
-        imu_sensor_data: Any,
-        prev_action: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Get robot state with offset compensation."""
-        # Batch state requests
-
-        q = self.map_kos_sim_to_isaac(states, pos=True)
-        dq = self.map_kos_sim_to_isaac(states, pos=False)
-
-        # gvec, quat, omega = self.get_gravity_vector(euler_data, imu_sensor_data)
-
-        gvec = np.array([0.01029401, -0.26815441, -0.96332127])
-
-        logger.debug("vel_cmd: %s", self.vel_cmd)
-        logger.debug("gvec: %s", gvec)
-        logger.debug("q: %s", q)
-        logger.debug("dq: %s", dq)
-        logger.debug("prev_action: %s", prev_action)
-
-        logger.debug("Shape of vel_cmd: %s", self.vel_cmd.shape)
-        logger.debug("Shape of gvec: %s", gvec.shape)
-        logger.debug("Shape of q: %s", q.shape)
-        logger.debug("Shape of dq: %s", dq.shape)
-        logger.debug("Shape of prev_action: %s", prev_action.shape)
-
-        obs = np.concatenate([self.vel_cmd, gvec, q, dq, prev_action])
-
-        return obs
-
-    def apply_command(self, position: float, joint_name: str) -> float:
-        """Apply sign first, then offset to outgoing command. Convert from radians to degrees."""
-        position_deg = np.rad2deg(position)
-        return position_deg - self.joint_offsets[joint_name]
-
-    async def inner_loop(self, kos: KOS) -> None:
-        states, euler_data, imu_sensor_data = await self.gather_kos_data(kos)
-        obs = self.get_obs(states, euler_data, imu_sensor_data, self.prev_action)
-        input_name = self.policy.get_inputs()[0].name
-        actions_raw = self.policy.run(None, {input_name: obs.reshape(1, -1).astype(np.float32)})[0][0]  # shape (20,)
-
-        # actions_raw = np.zeros_like(actions_raw) # ZERO ACTIONS
-        self.prev_action = actions_raw
-        actions = actions_raw * self.config["actions"]["joint_pos"]["scale"]
-        logger.debug("actions: %s", actions)
-
-        commands = self.map_isaac_to_kos_sim(actions)
-        for cmd in commands:
-            logger.debug(
-                "cmd id: %s, pos: %s deg, name: %s",
-                cmd["actuator_id"],
-                cmd["position"],
-                self.idtoname[cmd["actuator_id"]],
-            )
-
-        await kos.actuator.command_actuators(commands)
-
-
-async def run_robot(args: argparse.Namespace) -> None:
-    session, config = await load_policy_and_config(args.checkpoint_path)
-
-    # Create mappings between actuator ID and joint name
-    idtoname = {actuator.actuator_id: actuator.joint_name for actuator in ACTUATOR_LIST}
-    nametoid = {actuator.joint_name: actuator.actuator_id for actuator in ACTUATOR_LIST}
-
-    # Example policy joint mapping (assumes policy outputs match the order of joints)
-    # Assuming your policy output corresponds to the joints in a specific order (as per ACTUATOR_LIST)
-    indextoname = {i: isaac_joint_names[i] for i in range(len(isaac_joint_names))}
-    nametoindex = {isaac_joint_names[i]: i for i in range(len(isaac_joint_names))}
-
-    vel_cmd = np.array(args.vel_cmd.split(","), dtype=np.float32)
-    robot_state = RobotState(
-        joint_names=isaac_joint_names,
-        start_pos=start_pos,
-        vel_cmd=vel_cmd,
-        config=config,
-        policy=session,
-        idtoname=idtoname,
-        nametoid=nametoid,
-        indextoname=indextoname,
-        nametoindex=nametoindex,
-    )
-
-    # Performance tracking variables
-    start_time = time.time()
-    end_time = start_time + 10  # Run for 10 seconds like test_00
-    frequency = 50  # Hz
-
-    async with KOS(ip=args.host, port=args.port) as sim_kos:
-        # # Initialize position and orientation
-        base_pos = [0.0, 0.0, 1.05]  # x, y, z
-        base_quat = [1.0, 0.0, 0.0, 0.0]  # w, x, y, z
-
-        # Create joint values list in the format expected by sim_pb2.JointValue
-        joint_values = []
-        # for actuator, pos in zip(ACTUATOR_LIST, [start_pos[name] for name in isaac_joint_names]):
-        #     value = pos
-        #     logger.debug("appending actuator.joint_name: %s, value: %s", actuator.joint_name, value)
-        #     joint_values.append({"name": actuator.joint_name, "pos": value})
 
         await sim_kos.sim.reset(
-            pos={"x": base_pos[0], "y": base_pos[1], "z": base_pos[2]},
-            quat={"w": base_quat[0], "x": base_quat[1], "y": base_quat[2], "z": base_quat[3]},
-            joints=joint_values,
+            pos={"x": 0.0, "y": 0.0, "z": 0.4295},
+            quat={"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+            joints=[
+                {
+                    "name": actuator.joint_name,
+                    "pos": pos,
+                }
+                for actuator, pos in zip(ACTUATOR_LIST, default_position)
+            ],
         )
+        start_time = time.time()
+        end_time = None if num_seconds is None else start_time + num_seconds
 
-        while time.time() < end_time:
-            loop_start_time = time.time()
-            print(f"Time: {time.time()} end_time: {end_time}")
+        default = np.array(default_position)
+        target_q = np.zeros(10, dtype=np.double)
+        prev_actions = np.zeros(10, dtype=np.double)
+        hist_obs = np.zeros(570, dtype=np.double)
 
-            if args.sim_only:
-                print("Running in simulation-only mode...")
-                _ = await robot_state.inner_loop(
-                    kos=sim_kos,
-                )
-                waiting_time = 1 / frequency
-                loop_end_time = time.time()
-                sleep_time = max(0, waiting_time - (loop_end_time - loop_start_time))
-                logger.debug("Sleeping for %s seconds", sleep_time)
-                await asyncio.sleep(sleep_time)
+        input_data = {
+            "x_vel.1": np.zeros(1).astype(np.float32),
+            "y_vel.1": np.zeros(1).astype(np.float32),
+            "rot.1": np.zeros(1).astype(np.float32),
+            "t.1": np.zeros(1).astype(np.float32),
+            "dof_pos.1": np.zeros(10).astype(np.float32),
+            "dof_vel.1": np.zeros(10).astype(np.float32),
+            "prev_actions.1": np.zeros(10).astype(np.float32),
+            "projected_gravity.1": np.zeros(3).astype(np.float32),
+            "buffer.1": np.zeros(570).astype(np.float32),
+        }
+
+        x_vel_cmd = 0.15
+        y_vel_cmd = 0.0
+        yaw_vel_cmd = 0.0
+        frequency = 50
+
+        start_time = time.time()
+        next_time = start_time + 1 / frequency
+
+        while end_time is None or time.time() < end_time:
+            response, raw_quat = await asyncio.gather(
+                sim_kos.actuator.get_actuators_state(ACTUATOR_IDS),
+                sim_kos.imu.get_quaternion(),
+            )
+            positions = np.array([math.radians(state.position) for state in response.states])
+            velocities = np.array([math.radians(state.velocity) for state in response.states])
+            r = R.from_quat([raw_quat.x, raw_quat.y, raw_quat.z, raw_quat.w])
+
+            gvec = r.apply(np.array([0.0, 0.0, -1.0]), inverse=True).astype(np.double)
+            gvec = np.array([-0.0492912, 0.00686305, -0.99876087]) # MANUALY SETTING GRAVITY VECTOR 
+
+            # Need to apply a transformation from the IMU frame to the frame
+            # that we used to train the original model.
+            gvec = np.array([-gvec[2], -gvec[1], gvec[0]])
+
+            cur_pos_obs = positions - default
+            cur_vel_obs = velocities
+            input_data["x_vel.1"] = np.array([x_vel_cmd], dtype=np.float32)
+            input_data["y_vel.1"] = np.array([y_vel_cmd], dtype=np.float32)
+            input_data["rot.1"] = np.array([yaw_vel_cmd], dtype=np.float32)
+            input_data["t.1"] = np.array([time.time() - start_time], dtype=np.float32)
+            input_data["dof_pos.1"] = cur_pos_obs.astype(np.float32)
+            input_data["dof_vel.1"] = cur_vel_obs.astype(np.float32)
+            input_data["prev_actions.1"] = prev_actions.astype(np.float32)
+            input_data["projected_gravity.1"] = gvec.astype(np.float32)
+            input_data["buffer.1"] = hist_obs.astype(np.float32)
+
+            policy_output = policy(input_data)
+            positions = policy_output["actions_scaled"]
+            # positions = np.zeros_like(positions) # ZEROING ACTIONS !!!
+            # positions[9] = 50.0
+            curr_actions = policy_output["actions"]
+            hist_obs = policy_output["x.3"]
+            prev_actions = curr_actions
+
+            target_q = positions + default
+
+            commands = []
+            for actuator_id in ACTUATOR_IDS:
+                policy_idx = ACTUATOR_ID_TO_POLICY_IDX[actuator_id]
+                raw_value = target_q[policy_idx]
+                command_deg = raw_value
+                command_deg = math.degrees(raw_value)
+                commands.append({"actuator_id": actuator_id, "position": command_deg})
+
+            await sim_kos.actuator.command_actuators(commands)
+            await asyncio.sleep(max(0, next_time - time.time()))
+            next_time += 1 / frequency
 
 
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", type=str, default="localhost")
     parser.add_argument("--port", type=int, default=50051)
+    parser.add_argument("--num-seconds", type=float, default=None)
     parser.add_argument("--debug", action="store_true")
-    parser.add_argument(
-        "--sim-only",
-        action="store_true",
-        help="Run simulation only without connecting to the real robot",
-    )
-    parser.add_argument(
-        "--checkpoint-path",
-        type=str,
-        default="assets/model_checkpoints/2025-02-14_19-18-23_model_13550",
-    )
-    # default="assets/saved_checkpoints/2025-02-19_02-47-37_model_4250")
-    parser.add_argument("--vel_cmd", type=str, default="0.0, -0.5, 0.0")
+    parser.add_argument("--model", type=str, default="assets/model_checkpoints/zbot_walking_kinfer/zbot_walking.kinfer")
     args = parser.parse_args()
-
-    args.sim_only = True  # Force sim-only mode to always be True
 
     colorlogging.configure(level=logging.DEBUG if args.debug else logging.INFO)
 
-    await run_robot(args)
+    model_path = args.model
+
+    # Defines the default joint positions for the legs.
+    default_position = [
+        0.0,  # left hip yaw
+        0.0,  # left hip roll
+        -0.3770,  # left hip pitch
+        0.7960,  # left knee
+        0.3770,  # left ankle
+        0.0,  # right hip yaw
+        0.0,  # right hip roll
+        0.3770,  # right hip pitch
+        -0.7960,  # right knee
+        -0.3770,  # right ankle
+    ]
+    await simple_walking(model_path, default_position, args.host, args.port, args.num_seconds)
 
 
 if __name__ == "__main__":
