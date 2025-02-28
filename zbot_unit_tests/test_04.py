@@ -48,6 +48,23 @@ ACTUATOR_ID_TO_POLICY_IDX = {actuator.actuator_id: actuator.nn_id for actuator i
 
 ACTUATOR_IDS = [actuator.actuator_id for actuator in ACTUATOR_LIST]
 
+def get_gravity_orientation(qw, qx, qy, qz):
+    """
+    Args:
+        quaternion: np.ndarray[float, float, float, float]
+    
+    Returns:
+        gravity_orientation: np.ndarray[float, float, float]
+    """
+
+    gravity_orientation = np.zeros(3)
+
+    gravity_orientation[0] = 2 * (-qz * qx + qw * qy)
+    gravity_orientation[1] = -2 * (qz * qy + qw * qx)
+    gravity_orientation[2] = 1 - 2 * (qw * qw + qz * qz)
+
+    return gravity_orientation
+
 
 async def simple_walking(
     model_path: str | Path,
@@ -137,12 +154,9 @@ async def simple_walking(
             velocities = np.array([math.radians(state.velocity) for state in response.states])
             r = R.from_quat([raw_quat.x, raw_quat.y, raw_quat.z, raw_quat.w])
 
-            gvec = r.apply(np.array([0.0, 0.0, -1.0]), inverse=True).astype(np.double)
-            gvec = np.array([-0.0492912, 0.00686305, -0.99876087]) # MANUALY SETTING GRAVITY VECTOR 
-
-            # Need to apply a transformation from the IMU frame to the frame
-            # that we used to train the original model.
-            gvec = np.array([-gvec[2], -gvec[1], gvec[0]])
+            gvec = get_gravity_orientation(qw=raw_quat.w, qx=raw_quat.x, qy=raw_quat.y, qz=raw_quat.z)
+            gvec = np.array([-gvec[2], -gvec[0], gvec[1]]) # APPLY CORRECTION TO MATCH SIM2SIM 
+            print(f"Gravity vector: [{gvec[0]:.3f}, {gvec[1]:.3f}, {gvec[2]:.3f}]")
 
             cur_pos_obs = positions - default
             cur_vel_obs = velocities
@@ -158,8 +172,6 @@ async def simple_walking(
 
             policy_output = policy(input_data)
             positions = policy_output["actions_scaled"]
-            positions = np.zeros_like(positions) # ZEROING ACTIONS !!!
-            # positions[9] = 50.0
             curr_actions = policy_output["actions"]
             hist_obs = policy_output["x.3"]
             prev_actions = curr_actions
@@ -200,14 +212,14 @@ async def main() -> None:
     default_position = [
         0.0,  # left hip yaw
         0.0,  # left hip roll
-        -0.3770,  # left hip pitch
+        -0.37,  # left hip pitch -0.53770,
         0.7960,  # left knee
-        0.3770,  # left ankle
+        0.42,  # left ankle
         0.0,  # right hip yaw
         0.0,  # right hip roll
-        0.3770,  # right hip pitch
+        0.37,  # right hip pitch 0.53770,
         -0.7960,  # right knee
-        -0.3770,  # right ankle
+        -0.42,  # right ankle
     ]
 
     await simple_walking(args.model, default_position, args.host, args.port, args.num_seconds)
