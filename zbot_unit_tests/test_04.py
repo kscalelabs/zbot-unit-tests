@@ -48,11 +48,12 @@ ACTUATOR_ID_TO_POLICY_IDX = {actuator.actuator_id: actuator.nn_id for actuator i
 
 ACTUATOR_IDS = [actuator.actuator_id for actuator in ACTUATOR_LIST]
 
+
 def get_gravity_orientation(qw, qx, qy, qz):
     """
     Args:
         quaternion: np.ndarray[float, float, float, float]
-    
+
     Returns:
         gravity_orientation: np.ndarray[float, float, float]
     """
@@ -155,7 +156,7 @@ async def simple_walking(
             r = R.from_quat([raw_quat.x, raw_quat.y, raw_quat.z, raw_quat.w])
 
             gvec = get_gravity_orientation(qw=raw_quat.w, qx=raw_quat.x, qy=raw_quat.y, qz=raw_quat.z)
-            gvec = np.array([-gvec[2], -gvec[0], gvec[1]]) # APPLY CORRECTION TO MATCH SIM2SIM 
+            gvec = np.array([-gvec[2], -gvec[0], gvec[1]])  # APPLY CORRECTION TO MATCH SIM2SIM
             print(f"Gravity vector: [{gvec[0]:.3f}, {gvec[1]:.3f}, {gvec[2]:.3f}]")
 
             cur_pos_obs = positions - default
@@ -201,12 +202,11 @@ async def main() -> None:
     args = parser.parse_args()
 
     colorlogging.configure(level=logging.DEBUG if args.debug else logging.INFO)
-    
+
     # Start kos-sim
     logger.info("Starting simulator server...")
     sim_process = subprocess.Popen(["kos-sim", "zbot-v2-fixed"])
     time.sleep(2)
-
 
     # Defines the default joint positions for the legs.
     default_position = [
