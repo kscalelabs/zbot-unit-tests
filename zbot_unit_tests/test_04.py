@@ -1,200 +1,228 @@
-"""Runs reinforcement learning unit tests.
+"""Run reinforcement learning unit test for zbot.
 
-To see a video of the policy running in simulation, look in `assets/model_checkpoints/zbot_rl_policy/policy.mp4`.
-
-To see the input actuator positions and output policy actions for each timestep,
-uncomment the `logger.setLevel(logging.DEBUG)` line.
+Runs a simple walking policy on the zbot.
 """
 
+import argparse
 import asyncio
 import logging
 import math
-import os
 import time
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
 
 import colorlogging
 import numpy as np
 import onnxruntime as ort
-import pykos
+from pykos import KOS
+from scipy.spatial.transform import Rotation as R
 
 logger = logging.getLogger(__name__)
 
 
-# Constants for actuator IDs and policy indices
-ACTUATOR_IDS = [11, 12, 13, 14, 21, 22, 23, 24, 31, 32, 33, 34, 35, 41, 42, 43, 44, 45]
-
-ACTUATOR_ID_TO_NAME = {
-    11: "left_shoulder_yaw",
-    12: "left_shoulder_pitch",
-    13: "left_elbow",
-    14: "left_gripper",
-    21: "right_shoulder_yaw",
-    22: "right_shoulder_pitch",
-    23: "right_elbow",
-    24: "right_gripper",
-    31: "left_hip_yaw",
-    32: "left_hip_roll",
-    33: "left_hip_pitch",
-    34: "left_knee",
-    35: "left_ankle",
-    41: "right_hip_yaw",
-    42: "right_hip_roll",
-    43: "right_hip_pitch",
-    44: "right_knee",
-    45: "right_ankle",
-}
-
-# Policy input constants
-COMMAND_VELOCITY = np.array([-0.5, 0.0, 0.0], dtype=np.float32)
-PROJECTED_GRAVITY = np.array([0.0, 0.0, -1.0], dtype=np.float32)
-
-# Map actuator IDs to policy indices (just enumerate them in order)
-ACTUATOR_ID_TO_POLICY_IDX = {
-    11: 0,  # left_shoulder_yaw
-    12: 1,  # left_shoulder_pitch
-    13: 2,  # left_elbow
-    14: 3,  # left_gripper
-    21: 4,  # right_shoulder_yaw
-    22: 5,  # right_shoulder_pitch
-    23: 6,  # right_elbow
-    24: 7,  # right_gripper
-    31: 8,  # left_hip_yaw
-    32: 9,  # left_hip_roll
-    33: 10,  # left_hip_pitch
-    34: 11,  # left_knee
-    35: 12,  # left_ankle
-    41: 13,  # right_hip_yaw
-    42: 14,  # right_hip_roll
-    43: 15,  # right_hip_pitch
-    44: 16,  # right_knee
-    45: 17,  # right_ankle
-}
+@dataclass
+class Actuator:
+    actuator_id: int
+    nn_id: int
+    kp: float
+    kd: float
+    max_torque: float
+    joint_name: str
 
 
-def load_policy(checkpoint_dir: str) -> ort.InferenceSession:
-    """Load ONNX policy from checkpoint directory."""
-    policy_files = [f for f in os.listdir(checkpoint_dir) if f.endswith(".onnx")]
-    if not policy_files:
-        raise FileNotFoundError(f"Could not find .onnx file in {checkpoint_dir}")
-    policy_file = policy_files[0]
-    policy_path = os.path.join(checkpoint_dir, policy_file)
-    logger.info("Loading policy from: %s", os.path.abspath(policy_path))
-    return ort.InferenceSession(policy_path)
+ACTUATOR_LIST: list[Actuator] = [
+    Actuator(actuator_id=31, nn_id=0, kp=18.18, kd=1.46, max_torque=1.62, joint_name="left_hip_yaw"),
+    Actuator(actuator_id=32, nn_id=1, kp=18.18, kd=1.46, max_torque=1.62, joint_name="left_hip_roll"),
+    Actuator(actuator_id=33, nn_id=2, kp=18.18, kd=1.46, max_torque=1.62, joint_name="left_hip_pitch"),
+    Actuator(actuator_id=34, nn_id=3, kp=18.18, kd=1.46, max_torque=1.62, joint_name="left_knee"),
+    Actuator(actuator_id=35, nn_id=4, kp=18.18, kd=1.46, max_torque=1.62, joint_name="left_ankle"),
+    Actuator(actuator_id=41, nn_id=5, kp=18.18, kd=1.46, max_torque=1.62, joint_name="right_hip_yaw"),
+    Actuator(actuator_id=42, nn_id=6, kp=18.18, kd=1.46, max_torque=1.62, joint_name="right_hip_roll"),
+    Actuator(actuator_id=43, nn_id=7, kp=18.18, kd=1.46, max_torque=1.62, joint_name="right_hip_pitch"),
+    Actuator(actuator_id=44, nn_id=8, kp=18.18, kd=1.46, max_torque=1.62, joint_name="right_knee"),
+    Actuator(actuator_id=45, nn_id=9, kp=18.18, kd=1.46, max_torque=1.62, joint_name="right_ankle"),
+]
+
+ACTUATOR_ID_TO_POLICY_IDX = {actuator.actuator_id: actuator.nn_id for actuator in ACTUATOR_LIST}
+
+ACTUATOR_IDS = [actuator.actuator_id for actuator in ACTUATOR_LIST]
 
 
-def create_policy_input(positions: dict[int, float], prev_actions: np.ndarray) -> np.ndarray:
-    """Create observation vector for policy from current state."""
-    joint_angles = np.zeros(18, dtype=np.float32)
+def get_gravity_orientation(qw, qx, qy, qz):
+    """
+    Args:
+        quaternion: np.ndarray[float, float, float, float]
 
-    for actuator_id, policy_idx in ACTUATOR_ID_TO_POLICY_IDX.items():
-        joint_angles[policy_idx] = positions.get(actuator_id, 0.0)
+    Returns:
+        gravity_orientation: np.ndarray[float, float, float]
+    """
 
-    joint_velocities = np.zeros(18, dtype=np.float32)
+    gravity_orientation = np.zeros(3)
 
-    obs = np.concatenate(
-        [
-            COMMAND_VELOCITY,
-            PROJECTED_GRAVITY,
-            joint_angles,
-            joint_velocities,
-            prev_actions,
-        ],
-    ).astype(np.float32)
+    gravity_orientation[0] = 2 * (-qz * qx + qw * qy)
+    gravity_orientation[1] = -2 * (qz * qy + qw * qx)
+    gravity_orientation[2] = 1 - 2 * (qw * qw + qz * qz)
 
-    return obs
+    return gravity_orientation
 
 
-def print_state_and_actions(count: int, positions: dict[int, float], actions: np.ndarray) -> None:
-    """Print current joint positions and policy actions."""
-    logger.debug("=== Current State and Actions ===")
+async def simple_walking(
+    model_path: str | Path,
+    default_position: list[float],
+    host: str,
+    port: int,
+    num_seconds: float | None = 10.0,
+) -> None:
+    """Runs a simple walking policy.
 
-    # Find the longest name for alignment
-    max_name_length = max(len(name) for name in ACTUATOR_ID_TO_NAME.values())
+    Args:
+        model_path: The path to the ONNX model.
+        default_position: The default joint positions for the legs.
+        host: The host to connect to.
+        port: The port to connect to.
+        num_seconds: The number of seconds to run the policy for.
+    """
+    assert len(default_position) == len(ACTUATOR_LIST)
 
-    for actuator_id in ACTUATOR_IDS:
-        pos_deg = math.degrees(positions.get(actuator_id, 0.0))
-        policy_idx = ACTUATOR_ID_TO_POLICY_IDX[actuator_id]
-        action = actions[policy_idx]
-        logger.debug(
-            "timestep %4d: %s: pos=%6.2f deg, action=%6.3f rad",
-            count,
-            f"{ACTUATOR_ID_TO_NAME[actuator_id]:<{max_name_length}}",
-            pos_deg,
-            action,
+    model_path = Path(model_path)
+    if not model_path.exists():
+        raise FileNotFoundError(f"Model file not found: {model_path}")
+
+    session = ort.InferenceSession(model_path)
+
+    # Get input and output details
+    output_details = [{"name": x.name, "shape": x.shape, "type": x.type} for x in session.get_outputs()]
+
+    def policy(input_data: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        results = session.run(None, input_data)
+        return {output_details[i]["name"]: results[i] for i in range(len(output_details))}
+
+    async with KOS(ip=host, port=port) as sim_kos:
+        for actuator in ACTUATOR_LIST:
+            await sim_kos.actuator.configure_actuator(
+                actuator_id=actuator.actuator_id,
+                kp=actuator.kp,
+                kd=actuator.kd,
+                max_torque=actuator.max_torque,
+            )
+
+        await sim_kos.sim.reset(
+            pos={"x": 0.0, "y": 0.0, "z": 0.405},
+            quat={"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+            joints=[
+                {
+                    "name": actuator.joint_name,
+                    "pos": pos,
+                }
+                for actuator, pos in zip(ACTUATOR_LIST, default_position)
+            ],
         )
+        start_time = time.time()
+        end_time = None if num_seconds is None else start_time + num_seconds
+
+        default = np.array(default_position)
+        target_q = np.zeros(10, dtype=np.double)
+        prev_actions = np.zeros(10, dtype=np.double)
+        hist_obs = np.zeros(570, dtype=np.double)
+
+        input_data = {
+            "x_vel.1": np.zeros(1).astype(np.float32),
+            "y_vel.1": np.zeros(1).astype(np.float32),
+            "rot.1": np.zeros(1).astype(np.float32),
+            "t.1": np.zeros(1).astype(np.float32),
+            "dof_pos.1": np.zeros(10).astype(np.float32),
+            "dof_vel.1": np.zeros(10).astype(np.float32),
+            "prev_actions.1": np.zeros(10).astype(np.float32),
+            "projected_gravity.1": np.zeros(3).astype(np.float32),
+            "buffer.1": np.zeros(570).astype(np.float32),
+        }
+
+        x_vel_cmd = 0.15
+        y_vel_cmd = 0.0
+        yaw_vel_cmd = 0.0
+        frequency = 50
+
+        start_time = time.time()
+        next_time = start_time + 1 / frequency
+
+        while end_time is None or time.time() < end_time:
+            response, raw_quat = await asyncio.gather(
+                sim_kos.actuator.get_actuators_state(ACTUATOR_IDS),
+                sim_kos.imu.get_quaternion(),
+            )
+            positions = np.array([math.radians(state.position) for state in response.states])
+            velocities = np.array([math.radians(state.velocity) for state in response.states])
+            r = R.from_quat([raw_quat.x, raw_quat.y, raw_quat.z, raw_quat.w])
+
+            gvec = get_gravity_orientation(qw=raw_quat.w, qx=raw_quat.x, qy=raw_quat.y, qz=raw_quat.z)
+            gvec = np.array([-gvec[2], -gvec[0], gvec[1]])  # APPLY CORRECTION TO MATCH SIM2SIM
+            print(f"Gravity vector: [{gvec[0]:.3f}, {gvec[1]:.3f}, {gvec[2]:.3f}]")
+
+            cur_pos_obs = positions - default
+            cur_vel_obs = velocities
+            input_data["x_vel.1"] = np.array([x_vel_cmd], dtype=np.float32)
+            input_data["y_vel.1"] = np.array([y_vel_cmd], dtype=np.float32)
+            input_data["rot.1"] = np.array([yaw_vel_cmd], dtype=np.float32)
+            input_data["t.1"] = np.array([time.time() - start_time], dtype=np.float32)
+            input_data["dof_pos.1"] = cur_pos_obs.astype(np.float32)
+            input_data["dof_vel.1"] = cur_vel_obs.astype(np.float32)
+            input_data["prev_actions.1"] = prev_actions.astype(np.float32)
+            input_data["projected_gravity.1"] = gvec.astype(np.float32)
+            input_data["buffer.1"] = hist_obs.astype(np.float32)
+
+            policy_output = policy(input_data)
+            positions = policy_output["actions_scaled"]
+            curr_actions = policy_output["actions"]
+            hist_obs = policy_output["x.3"]
+            prev_actions = curr_actions
+
+            target_q = positions + default
+
+            commands = []
+            for actuator_id in ACTUATOR_IDS:
+                policy_idx = ACTUATOR_ID_TO_POLICY_IDX[actuator_id]
+                raw_value = target_q[policy_idx]
+                command_deg = raw_value
+                command_deg = math.degrees(raw_value)
+                commands.append({"actuator_id": actuator_id, "position": command_deg})
+
+            await sim_kos.actuator.command_actuators(commands)
+            await asyncio.sleep(max(0, next_time - time.time()))
+            next_time += 1 / frequency
 
 
 async def main() -> None:
-    colorlogging.configure()
-    logger.warning("Starting test-02")
-    try:
-        async with pykos.KOS("192.168.42.1") as kos:
-            await reinforcement_learning_test(kos)
-    except Exception:
-        logger.exception("Make sure that the Z-Bot is connected over USB and the IP address is accessible.")
-        raise
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", type=str, default="localhost")
+    parser.add_argument("--port", type=int, default=50051)
+    parser.add_argument("--num-seconds", type=float, default=None)
+    parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--model", type=str, default="assets/model_checkpoints/zbot_walking_kinfer/zbot_walking.kinfer")
+    args = parser.parse_args()
 
+    colorlogging.configure(level=logging.DEBUG if args.debug else logging.INFO)
 
-async def reinforcement_learning_test(kos: pykos.KOS) -> None:
-    """Runs reinforcement learning unit tests."""
-    # Load policy
-    policy_dir = "assets/model_checkpoints/zbot_rl_policy"
-    session = load_policy(policy_dir)
-    input_name = session.get_inputs()[0].name
+    # Start kos-sim
+    logger.info("Starting simulator server...")
+    sim_process = subprocess.Popen(["kos-sim", "zbot-v2"])
+    time.sleep(2)
 
-    # Initialize previous actions
-    prev_actions = np.zeros(18, dtype=np.float32)
+    # Defines the default joint positions for the legs.
+    default_position = [
+        0.0,  # left hip yaw
+        0.0,  # left hip roll
+        -0.37,  # left hip pitch -0.53770,
+        0.7960,  # left knee
+        0.42,  # left ankle
+        0.0,  # right hip yaw
+        0.0,  # right hip roll
+        0.37,  # right hip pitch 0.53770,
+        -0.7960,  # right knee
+        -0.42,  # right ankle
+    ]
 
-    # Performance tracking variables
-    count = 0
-    start_time = time.time()
-    end_time = start_time + 10  # Run for 10 seconds like test_00
-
-    last_second = int(time.time())
-    second_count = 0
-
-    while time.time() < end_time:
-        # Get robot state and run inference
-        response = await kos.actuator.get_actuators_state(ACTUATOR_IDS)
-        positions = {state.actuator_id: math.radians(state.position) for state in response.states}
-
-        # Create policy input and run inference
-        obs = create_policy_input(positions, prev_actions)
-        actions = session.run(None, {input_name: obs.reshape(1, -1)})[0][0]
-
-        # Store actions for next iteration
-        prev_actions = actions.copy()
-
-        # Scale actions by 0.5
-        actions *= 0.5
-
-        # Print detailed state and actions (in debug level)
-        print_state_and_actions(count, positions, actions)
-
-        # Update performance counters
-        count += 1
-        second_count += 1
-
-        # Log performance each second
-        current_second = int(time.time())
-        if current_second != last_second:
-            logger.info(
-                "Time: %.2f seconds - Inference calls this second: %d",
-                current_second - start_time,
-                second_count,
-            )
-            second_count = 0
-            last_second = current_second
-
-        # Small sleep to prevent overwhelming the system
-        await asyncio.sleep(0.001)
-
-    # Print final statistics
-    elapsed_time = time.time() - start_time
-    logger.info("Total inference calls: %d", count)
-    logger.info("Elapsed time: %.2f seconds", elapsed_time)
-    logger.info("Average inference calls per second: %.2f", count / elapsed_time)
-    logger.info("\nPolicy test completed successfully")
+    await simple_walking(args.model, default_position, args.host, args.port, args.num_seconds)
 
 
 if __name__ == "__main__":
