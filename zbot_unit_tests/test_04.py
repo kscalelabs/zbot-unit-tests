@@ -205,7 +205,7 @@ async def main() -> None:
 
     # Start kos-sim
     logger.info("Starting simulator server...")
-    sim_process = subprocess.Popen(["kos-sim", "zbot-v2-fixed"])
+    sim_process = subprocess.Popen(["kos-sim", "zbot-v2"])
     time.sleep(2)
 
     # Defines the default joint positions for the legs.
